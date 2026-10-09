@@ -1,69 +1,479 @@
-import Image from "next/image";
+"use client";
+
+import {
+  ArrowRight,
+  BarChart3,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Clock3,
+  GraduationCap,
+  LayoutDashboard,
+  Loader2,
+  Menu,
+  RefreshCw,
+  Sparkles,
+  Target,
+  TrendingUp,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+
+type Topic = {
+  id: string;
+  title: string;
+  subject: string;
+  estimatedMinutes: number;
+  completed: boolean;
+};
+
+type RoadmapDay = {
+  day: number;
+  date: string;
+  topics: Topic[];
+};
+
+const STORAGE_KEY = "studypilot-roadmap";
+const EXAM_DATE_STORAGE_KEY = "studypilot-exam-date";
+
+function formatDate(date: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(`${date}T12:00:00`));
+}
+
+function formatMinutes(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+  return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
+}
+
+function getTodayString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getDaysUntil(examDate: string) {
+  if (!examDate) return null;
+  const today = new Date(`${getTodayString()}T00:00:00Z`);
+  const target = new Date(`${examDate}T00:00:00Z`);
+  const difference = Math.ceil((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  return Number.isFinite(difference) ? difference : null;
+}
 
 export default function Home() {
+  const [view, setView] = useState<"setup" | "dashboard">("setup");
+  const [syllabusText, setSyllabusText] = useState("");
+  const [examDate, setExamDate] = useState("");
+  const [dailyHours, setDailyHours] = useState(3);
+  const [roadmap, setRoadmap] = useState<RoadmapDay[]>([]);
+  const [expandedDays, setExpandedDays] = useState<number[]>([1]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRebalancing, setIsRebalancing] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [rebalancingError, setRebalancingError] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    const storedRoadmap = window.localStorage.getItem(STORAGE_KEY);
+    const storedExamDate = window.localStorage.getItem(EXAM_DATE_STORAGE_KEY);
+    const restoreTimer = window.setTimeout(() => {
+      if (storedExamDate) setExamDate(storedExamDate);
+      if (storedRoadmap) {
+        try {
+          const saved = JSON.parse(storedRoadmap) as RoadmapDay[];
+          if (Array.isArray(saved) && saved.length > 0) {
+            setRoadmap(saved);
+            setView("dashboard");
+          }
+        } catch {
+          window.localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+    }, 0);
+
+    return () => window.clearTimeout(restoreTimer);
+  }, []);
+
+  useEffect(() => {
+    if (roadmap.length > 0) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(roadmap));
+    }
+  }, [roadmap]);
+
+  const stats = useMemo(() => {
+    const topics = roadmap.flatMap((day) => day.topics);
+    const completed = topics.filter((topic) => topic.completed).length;
+    const activeDays = roadmap.filter((day) => day.topics.some((topic) => topic.completed)).length;
+    return {
+      total: topics.length,
+      completed,
+      percent: topics.length ? Math.round((completed / topics.length) * 100) : 0,
+      streak: activeDays,
+    };
+  }, [roadmap]);
+
+  async function generateRoadmap() {
+    setError("");
+    setNotice("");
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/generate-roadmap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ syllabusText, examDate, dailyHours }),
+      });
+      let data: { roadmap?: RoadmapDay[]; error?: string };
+      try {
+        data = (await response.json()) as { roadmap?: RoadmapDay[]; error?: string };
+      } catch {
+        throw new Error("The server returned an invalid response. Please try again.");
+      }
+      if (!response.ok || !data.roadmap) {
+        throw new Error(data.error || "Unable to generate your strategy.");
+      }
+      setRoadmap(data.roadmap);
+      window.localStorage.setItem(EXAM_DATE_STORAGE_KEY, examDate);
+      setExpandedDays([1]);
+      setNotice("Your personalized roadmap is ready.");
+      setView("dashboard");
+    } catch (generationError) {
+      setError(
+        generationError instanceof TypeError
+          ? "Unable to reach the server. Check your connection and try again."
+          : generationError instanceof Error
+            ? generationError.message
+            : "Something went wrong.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function toggleTopic(dayNumber: number, topicId: string) {
+    setRoadmap((current) =>
+      current.map((day) =>
+        day.day === dayNumber
+          ? {
+              ...day,
+              topics: day.topics.map((topic) =>
+                topic.id === topicId ? { ...topic, completed: !topic.completed } : topic,
+              ),
+            }
+          : day,
+      ),
+    );
+  }
+
+  function toggleDay(dayNumber: number) {
+    setExpandedDays((current) =>
+      current.includes(dayNumber)
+        ? current.filter((day) => day !== dayNumber)
+        : [...current, dayNumber],
+    );
+  }
+
+  function rebalancePlan() {
+    setIsRebalancing(true);
+    setNotice("");
+    setRebalancingError("");
+    window.setTimeout(() => {
+      try {
+      setRoadmap((current) => {
+        const unfinished = current.flatMap((day) => day.topics.filter((topic) => !topic.completed));
+        const completedByDay = current.map((day) => ({
+          ...day,
+          topics: day.topics.filter((topic) => topic.completed),
+        }));
+        const capacity = dailyHours * 60;
+        let topicIndex = 0;
+        const rebalanced = completedByDay.map((day) => {
+          const planned = [...day.topics];
+          let minutes = planned.reduce((sum, topic) => sum + topic.estimatedMinutes, 0);
+          while (
+            topicIndex < unfinished.length &&
+            (minutes + unfinished[topicIndex].estimatedMinutes <= capacity || planned.length === 0)
+          ) {
+            planned.push(unfinished[topicIndex]);
+            minutes += unfinished[topicIndex].estimatedMinutes;
+            topicIndex += 1;
+          }
+          return { ...day, topics: planned };
+        });
+        if (topicIndex < unfinished.length && rebalanced.length > 0) {
+          rebalanced[rebalanced.length - 1] = {
+            ...rebalanced[rebalanced.length - 1],
+            topics: [...rebalanced[rebalanced.length - 1].topics, ...unfinished.slice(topicIndex)],
+          };
+        }
+        return rebalanced;
+      });
+      setIsRebalancing(false);
+      setNotice("Your unfinished topics were redistributed without changing your exam date.");
+      } catch {
+        setIsRebalancing(false);
+        setRebalancingError("We couldn't rebalance your plan. Your existing roadmap is unchanged.");
+      }
+    }, 650);
+  }
+
+  const activeDay = roadmap[0];
+
+  if (view === "setup") {
+    return (
+      <SetupLanding
+        syllabusText={syllabusText}
+        examDate={examDate}
+        dailyHours={dailyHours}
+        isLoading={isLoading}
+        error={error}
+        onSyllabusChange={setSyllabusText}
+        onDateChange={setExamDate}
+        onHoursChange={setDailyHours}
+        onGenerate={generateRoadmap}
+      />
+    );
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-canvas text-ink">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r bg-white/95 px-5 py-7 shadow-[8px_0_30px_rgb(16_17_36_/2%)] backdrop-blur lg:flex">
+        <Brand />
+        <div className="mt-14 mb-3 px-3"><p className="eyebrow">Workspace</p></div>
+        <nav className="space-y-2">
+          <button className="nav-item nav-item-active" onClick={() => setView(roadmap.length ? "dashboard" : "setup")}>
+            <LayoutDashboard size={18} /> Overview
+          </button>
+          <button className="nav-item" onClick={() => setView("setup")}>
+            <Sparkles size={18} /> New strategy
+          </button>
+        </nav>
+        <div className="mt-auto rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 p-4">
+          <div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-200">
+            <Target size={18} />
+          </div>
+          <p className="text-sm font-semibold text-indigo-950">Small steps, big wins.</p>
+          <p className="mt-1 text-xs leading-5 text-indigo-700">Consistency compounds. You&apos;ve got this.</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+      </aside>
+
+      <div className="lg:pl-64">
+        <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b bg-white/75 px-5 backdrop-blur-xl sm:px-8 lg:px-12">
+          <button className="flex items-center gap-2 lg:hidden" onClick={() => setMobileNavOpen(true)}>
+            <Menu size={20} />
+            <Brand />
+          </button>
+          <div className="hidden lg:block">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Your learning workspace</p>
+            <h1 className="mt-1 text-lg font-bold tracking-tight">Good to see you again</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-2 rounded-full border bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm sm:flex">
+              <span className="size-2 rounded-full bg-emerald-500" /> Focus mode on
+            </div>
+            <div className="flex size-9 items-center justify-center rounded-full bg-slate-950 text-xs font-bold text-white shadow-sm">SP</div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
+          <DashboardView
+              roadmap={roadmap}
+              stats={stats}
+              activeDay={activeDay}
+              expandedDays={expandedDays}
+              isRebalancing={isRebalancing}
+              notice={notice}
+              rebalancingError={rebalancingError}
+              examDate={examDate}
+              onToggleDay={toggleDay}
+              onToggleTopic={toggleTopic}
+              onRebalance={rebalancePlan}
+              onNewStrategy={() => setView("setup")}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        </main>
+      </div>
+
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/30 lg:hidden" onClick={() => setMobileNavOpen(false)}>
+          <div className="h-full w-72 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between"><Brand /><button onClick={() => setMobileNavOpen(false)}><X size={20} /></button></div>
+            <nav className="mt-12 space-y-2">
+              <button className="nav-item nav-item-active" onClick={() => { setView(roadmap.length ? "dashboard" : "setup"); setMobileNavOpen(false); }}><LayoutDashboard size={18} /> Overview</button>
+              <button className="nav-item" onClick={() => { setView("setup"); setMobileNavOpen(false); }}><Sparkles size={18} /> New strategy</button>
+            </nav>
+          </div>
         </div>
-      </main>
+      )}
     </div>
   );
+}
+
+function Brand() {
+  return <div className="flex items-center gap-2.5"><div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-200"><GraduationCap size={19} /></div><span className="text-base font-extrabold tracking-tight text-slate-950">StudyPilot<span className="text-violet-600"> AI</span></span></div>;
+}
+
+function SetupLanding({
+  syllabusText,
+  examDate,
+  dailyHours,
+  isLoading,
+  error,
+  onSyllabusChange,
+  onDateChange,
+  onHoursChange,
+  onGenerate,
+}: {
+  syllabusText: string;
+  examDate: string;
+  dailyHours: number;
+  isLoading: boolean;
+  error: string;
+  onSyllabusChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+  onHoursChange: (value: number) => void;
+  onGenerate: () => void;
+}) {
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    const todayTimer = window.setTimeout(() => {
+      setToday(new Date().toISOString().slice(0, 10));
+    }, 0);
+    return () => window.clearTimeout(todayTimer);
+  }, []);
+
+  const dateError = today.length > 0 && examDate.length > 0 && examDate < today;
+  const canSubmit = syllabusText.trim().length > 0 && Boolean(examDate) && !dateError;
+
+  return (
+    <main className="page-enter relative min-h-screen overflow-hidden bg-canvas px-5 py-6 sm:px-8 lg:px-14">
+      <div className="pointer-events-none absolute -right-40 -top-52 size-[34rem] rounded-full bg-violet-200/25 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-64 -left-40 size-[28rem] rounded-full bg-indigo-100/30 blur-3xl" />
+      <header className="relative mx-auto flex max-w-7xl items-center justify-between">
+        <Brand />
+        <div className="hidden items-center gap-2 text-xs font-semibold text-slate-500 sm:flex"><span className="size-2 rounded-full bg-emerald-500" /> Built for focused progress</div>
+      </header>
+      <div className="relative mx-auto grid max-w-7xl items-center gap-14 py-16 lg:grid-cols-[1fr_0.86fr] lg:gap-24 lg:py-24">
+        <section>
+          <div className="page-enter stagger-1 mb-7 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-violet-700 shadow-sm"><Sparkles size={14} /> AI-powered study planning</div>
+          <h1 className="page-enter stagger-2 max-w-2xl text-5xl font-black leading-[0.98] tracking-[-0.065em] text-slate-950 sm:text-7xl">Your syllabus.<br />Your <span className="bg-gradient-to-r from-violet-600 to-indigo-500 bg-clip-text text-transparent">strategy.</span><br />Your success.</h1>
+          <p className="page-enter stagger-3 mt-8 max-w-xl text-base leading-8 text-slate-500 sm:text-lg">StudyPilot AI turns an overwhelming syllabus into an actionable daily roadmap, paced around your exam date, your time, and the way you learn.</p>
+          <div className="page-enter stagger-4 mt-9 grid max-w-xl gap-3 sm:grid-cols-3">
+            {[
+              ["Personalized roadmaps", "Built around your target"],
+              ["Adaptive scheduling", "Flexible when life happens"],
+              ["Progress tracking", "Momentum you can see"],
+            ].map(([title, detail]) => (
+              <div key={title} className="flex gap-2.5 text-sm"><span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={13} strokeWidth={3} /></span><span><span className="block font-bold text-slate-800">{title}</span><span className="mt-1 block text-xs leading-5 text-slate-400">{detail}</span></span></div>
+            ))}
+          </div>
+        </section>
+
+        <section className="page-enter stagger-4 surface-card relative p-6 sm:p-9">
+          <div className="absolute -right-3 -top-3 flex size-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-xl shadow-violet-200"><Target size={20} /></div>
+          <div className="mb-8"><p className="text-2xl font-black tracking-tight text-slate-950">Let&apos;s map it out</p><p className="mt-2 text-sm text-slate-500">Tell us what you&apos;re preparing for.</p></div>
+          <form onSubmit={(event) => { event.preventDefault(); if (canSubmit && !isLoading) onGenerate(); }}>
+            <div className="mb-6">
+              <div className="mb-2 flex items-center justify-between"><label className="field-label mb-0" htmlFor="syllabus">Syllabus or topics</label><span className="text-xs tabular-nums text-slate-400">{syllabusText.length} characters</span></div>
+              <textarea id="syllabus" value={syllabusText} onChange={(event) => onSyllabusChange(event.target.value)} placeholder={"e.g. Biology: cell structure, genetics, ecology\nMathematics: calculus, probability, statistics"} aria-describedby="syllabus-help" className="input-field min-h-44 resize-y leading-7" />
+              <p id="syllabus-help" className="mt-2 text-xs text-slate-400">Paste subjects, chapters, or a full syllabus outline.</p>
+            </div>
+            <div className="mb-6">
+              <label className="field-label" htmlFor="exam-date">Exam target date</label>
+              <div className="relative"><CalendarDays className="input-icon" size={17} /><input id="exam-date" type="date" min={today} value={examDate} onChange={(event) => onDateChange(event.target.value)} aria-invalid={dateError} aria-describedby={dateError ? "date-error" : undefined} className={`input-field pl-10 ${dateError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-500/10" : ""}`} /></div>
+              {dateError && <p id="date-error" role="alert" className="mt-2 text-xs font-semibold text-rose-600">Choose today or a future date.</p>}
+            </div>
+            <div className="mb-7">
+              <div className="mb-3 flex items-end justify-between"><label className="field-label mb-0" htmlFor="hours">Daily study hours</label><span className="text-2xl font-black tracking-tight text-violet-600">{dailyHours}<span className="ml-1 text-sm font-bold">hrs/day</span></span></div>
+              <div className="rounded-xl border bg-slate-50/70 px-4 py-3"><input id="hours" type="range" min="1" max="12" step="0.5" value={dailyHours} onChange={(event) => onHoursChange(Number(event.target.value))} aria-valuetext={`${dailyHours} hours per day`} className="w-full cursor-pointer accent-violet-600" /><div className="mt-2 flex justify-between text-[11px] font-semibold text-slate-400"><span>1 hour</span><span>12 hours</span></div></div>
+            </div>
+            {error && <div role="alert" aria-live="assertive" className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"><p className="font-semibold">{error}</p><p className="mt-1 text-xs text-rose-600">Check your details and try again. Your entries are still saved.</p><button type="button" onClick={onGenerate} disabled={isLoading || !canSubmit} className="mt-2 text-xs font-bold text-rose-700 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50">Retry generation</button></div>}
+            <button type="submit" disabled={isLoading || !canSubmit} aria-busy={isLoading} className="primary-button w-full">{isLoading ? <><Loader2 className="animate-spin" size={18} /> Building your roadmap...</> : <>Generate Study Strategy <ArrowRight size={18} /> </>}</button>
+            {isLoading && <div role="status" aria-live="polite" className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-xs font-semibold text-violet-700"><span className="size-1.5 animate-pulse rounded-full bg-violet-600" /> Organizing your topics around your available time...</div>}
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400"><Sparkles size={12} /> Your plan is ready in under a minute</p>
+          </form>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function DashboardView({
+  roadmap,
+  stats,
+  activeDay,
+  expandedDays,
+  isRebalancing,
+  notice,
+  rebalancingError,
+  examDate,
+  onToggleDay,
+  onToggleTopic,
+  onRebalance,
+  onNewStrategy,
+}: {
+  roadmap: RoadmapDay[];
+  stats: { total: number; completed: number; percent: number; streak: number };
+  activeDay?: RoadmapDay;
+  expandedDays: number[];
+  isRebalancing: boolean;
+  notice: string;
+  rebalancingError: string;
+  examDate: string;
+  onToggleDay: (day: number) => void;
+  onToggleTopic: (day: number, id: string) => void;
+  onRebalance: () => void;
+  onNewStrategy: () => void;
+}) {
+  const daysUntilExam = getDaysUntil(examDate);
+  const today = getTodayString();
+  const todayDay = roadmap.find((day) => day.date === today);
+  const plannedMinutes = todayDay?.topics.reduce((sum, topic) => sum + topic.estimatedMinutes, 0) ?? 0;
+
+  return (
+    <div className="page-enter">
+      <nav className="mb-8 flex items-center justify-between border-b pb-4">
+        <div className="flex gap-5 text-sm font-semibold text-slate-500">
+          <a href="#overview" className="text-violet-600">Dashboard</a>
+          <a href="#roadmap" className="transition-colors hover:text-violet-600">My Roadmap</a>
+          <a href="#progress" className="transition-colors hover:text-violet-600">Progress</a>
+        </div>
+        <button onClick={onNewStrategy} className="secondary-button"><Sparkles size={16} /> New strategy</button>
+      </nav>
+      <div id="overview" className="mb-9 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="eyebrow">Dashboard</p><h2 className="mt-2 text-3xl font-black tracking-[-0.03em] sm:text-4xl">Keep the momentum.</h2><p className="mt-2 text-sm text-slate-500">One focused session at a time.</p></div>{examDate && <p className="text-sm font-semibold text-slate-500">Exam target: <span className="text-slate-900">{formatDate(examDate)}</span></p>}</div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard icon={<Target size={18} />} label="Exam countdown" value={daysUntilExam === null ? "—" : daysUntilExam >= 0 ? `${daysUntilExam} days` : "Past due"} detail={examDate ? formatDate(examDate) : "Target not saved"} color="indigo" />
+        <StatCard icon={<BarChart3 size={18} />} label="Total topics" value={stats.total} detail="in your roadmap" color="indigo" />
+        <StatCard icon={<Check size={18} />} label="Completed" value={stats.completed} detail={`${stats.percent}% complete`} color="emerald" />
+        <StatCard icon={<TrendingUp size={18} />} label="Remaining" value={Math.max(stats.total - stats.completed, 0)} detail="topics to go" color="orange" />
+        <StatCard icon={<Clock3 size={18} />} label="Today planned" value={formatMinutes(plannedMinutes)} detail={todayDay ? `${todayDay.topics.length} topics today` : "No topics today"} color="violet" />
+      </div>
+      <div id="progress" className="surface-card mt-5 p-5"><div className="mb-3 flex justify-between text-sm font-bold"><span>Overall completion</span><span className="text-violet-600">{stats.percent}%</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="progress-fill h-full rounded-full bg-gradient-to-r from-violet-600 to-indigo-500 transition-all duration-500" style={{ width: `${stats.percent}%` }} /></div></div>
+      <div id="roadmap" className="mt-10 grid gap-8 xl:grid-cols-[1fr_300px]">
+        <section><div className="mb-4 flex items-center justify-between"><div><h3 className="text-xl font-bold tracking-tight">Daily checklist</h3><p className="mt-1 text-sm text-slate-500">{roadmap.length} planned study days</p></div><CalendarDays className="text-slate-400" size={20} aria-label="Calendar" /></div>{roadmap.length === 0 ? <EmptyRoadmap onNewStrategy={onNewStrategy} /> : <div className="space-y-3">{roadmap.map((day) => <DayAccordion key={day.day} day={day} expanded={expandedDays.includes(day.day)} isToday={day.date === today} onToggle={() => onToggleDay(day.day)} onTopicToggle={onToggleTopic} />)}</div>}</section>
+        <aside className="space-y-4"><div className="overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-600 to-indigo-600 p-5 text-white shadow-xl shadow-violet-200"><div className="mb-7 flex items-start justify-between"><div><p className="text-sm font-semibold text-violet-100">Today&apos;s focus</p><p className="mt-1 text-2xl font-black">{todayDay ? `Day ${todayDay.day}` : activeDay ? `Day ${activeDay.day}` : "Ready"}</p></div><div className="rounded-xl bg-white/15 p-2.5"><Target size={20} /></div></div><p className="text-sm text-violet-100">{todayDay ? formatDate(todayDay.date) : "No schedule for today"}</p><div className="mt-4 flex items-center gap-2 text-sm font-semibold"><Clock3 size={15} /> {formatMinutes(plannedMinutes)} planned</div></div><div className="surface-card p-5"><div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><RefreshCw size={18} /></div><h3 className="font-bold">Fell behind?</h3><p className="mt-1 text-sm leading-6 text-slate-500">Redistribute unfinished topics while preserving completed work and your exam date.</p><button onClick={onRebalance} disabled={isRebalancing || roadmap.length === 0} className="secondary-button mt-4 w-full justify-center text-xs">{isRebalancing ? <><Loader2 className="animate-spin" size={15} /> Rebalancing...</> : <><RefreshCw size={15} /> I&apos;m Behind — Rebalance My Plan</>}</button>{notice && <p role="status" className="mt-3 text-xs font-semibold text-emerald-600">{notice}</p>}{rebalancingError && <p role="alert" className="mt-3 text-xs font-semibold text-rose-600">{rebalancingError}</p>}</div></aside>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, detail, color }: { icon: ReactNode; label: string; value: string | number; detail: string; color: string }) {
+  const colorClasses = {
+    indigo: "bg-violet-50 text-violet-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    orange: "bg-orange-50 text-orange-600",
+    violet: "bg-violet-50 text-violet-600",
+  };
+  return <div className="surface-card p-5 transition-transform duration-200 hover:-translate-y-0.5"><div className={`mb-5 flex size-9 items-center justify-center rounded-xl ${colorClasses[color as keyof typeof colorClasses]}`}>{icon}</div><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-1 text-2xl font-black tracking-tight">{value}</p><p className="mt-1 text-xs text-slate-400">{detail}</p></div>;
+}
+
+function EmptyRoadmap({ onNewStrategy }: { onNewStrategy: () => void }) {
+  return <div className="surface-card flex flex-col items-center px-6 py-14 text-center"><div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-600"><CalendarDays size={22} /></div><h4 className="text-lg font-bold">Your roadmap is empty</h4><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">Generate a strategy to turn your syllabus into focused daily checklists.</p><button onClick={onNewStrategy} className="primary-button mt-6">Create a strategy <ArrowRight size={16} /></button></div>;
+}
+
+function DayAccordion({ day, expanded, isToday, onToggle, onTopicToggle }: { day: RoadmapDay; expanded: boolean; isToday: boolean; onToggle: () => void; onTopicToggle: (day: number, id: string) => void }) {
+  const completed = day.topics.filter((topic) => topic.completed).length;
+  return <div className={`overflow-hidden rounded-2xl border bg-white transition-all duration-200 ${isToday ? "border-violet-300 ring-2 ring-violet-100" : ""} ${expanded ? "shadow-md shadow-violet-100/50" : "shadow-[0_6px_20px_rgb(16_17_36_/3%)] hover:border-violet-100"}`}><button onClick={onToggle} aria-expanded={expanded} className="flex w-full items-center gap-4 p-4 text-left sm:p-5"><div className={`flex size-11 shrink-0 flex-col items-center justify-center rounded-xl ${completed === day.topics.length && day.topics.length > 0 ? "bg-emerald-50 text-emerald-600" : "bg-violet-50 text-violet-600"}`}><span className="text-[10px] font-bold uppercase">Day</span><span className="text-lg font-black leading-4">{day.day}</span></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{formatDate(day.date)}</p>{isToday && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-700">Today</span>}{completed === day.topics.length && day.topics.length > 0 && <Check className="text-emerald-500" size={15} aria-label="Complete" />}</div><p className="mt-1 text-xs text-slate-500">{day.topics.length === 0 ? "Rest day" : `${completed} of ${day.topics.length} topics complete`}</p></div><ChevronDown className={`text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} size={20} /></button>{expanded && <div className="border-t px-4 pb-4 sm:px-5 sm:pb-5">{day.topics.length === 0 ? <p className="pt-4 text-sm text-slate-400">No study tasks planned for this day.</p> : <div className="space-y-2 pt-3">{day.topics.map((topic) => <label key={topic.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${topic.completed ? "border-emerald-100 bg-emerald-50/60" : "hover:border-violet-100 hover:bg-violet-50/30"}`}><input type="checkbox" checked={topic.completed} onChange={() => onTopicToggle(day.day, topic.id)} className="peer sr-only" /><span className={`flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${topic.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{topic.completed && <Check size={13} strokeWidth={3} />}</span><span className="min-w-0 flex-1"><span className={`block text-sm font-semibold ${topic.completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{topic.title}</span><span className="mt-1 block text-xs text-slate-400">{topic.subject} · {formatMinutes(topic.estimatedMinutes)}</span></span><span className={`text-[11px] font-semibold ${topic.completed ? "text-emerald-600" : "text-slate-400"}`}>{topic.completed ? "Done" : "To do"}</span></label>)}</div>}</div>}</div>;
 }
