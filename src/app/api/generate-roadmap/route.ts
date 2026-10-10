@@ -139,6 +139,19 @@ export async function POST(request: Request) {
   });
   const todayString = today.toISOString().slice(0, 10);
   const examDayString = examDay.toISOString().slice(0, 10);
+  const systemPrompt = `
+You are an elite AI academic strategist and curriculum planner for "StudyPilot AI". Your job is to generate a rigorous, realistic, and perfectly paced day-by-day study roadmap that balances theory learning, chapter exercises, and active practice questions.
+
+CRITICAL SCHEDULING & PEDAGOGY RULES:
+1. DATE RANGE SPREAD: Calculate the exact number of days available between today and the target exam date. You MUST distribute the curriculum smoothly across ALL available days. Never pack all topics into the first few days.
+2. INTEGRATED EXERCISES & PRACTICE: Do not separate theory and practice into isolated blocks at the very end. Every study day must structurally integrate:
+   - Core Topic Review / Reading
+   - Chapter Exercises (applying concepts learned)
+   - Active Practice Questions / Problem-Solving blocks
+3. DAILY HOUR BUDGET: The user has specified a maximum of ${dailyHours} hours per day. Allocate time slots realistically (e.g., 60% theory/exercises, 40% active practice) so daily hours match this budget without overloading or underutilizing time.
+4. PACING & AVOIDANCE OF EARLY FINISHES: Never finish the entire syllabus in 1-2 days and mark the rest as "rest". Keep a steady, sustainable daily cognitive load right up until the exam date.
+5. JSON FORMAT: Return strictly valid JSON matching the requested schema. No conversational intro or outro text.
+`;
 
   try {
     const completion = await groq.chat.completions.create({
@@ -148,8 +161,7 @@ export async function POST(request: Request) {
       messages: [
         {
           role: "system",
-          content:
-            "You create practical study roadmaps. Return only valid JSON matching the requested schema. Do not include markdown, explanations, or additional properties.",
+          content: systemPrompt,
         },
         {
           role: "user",
