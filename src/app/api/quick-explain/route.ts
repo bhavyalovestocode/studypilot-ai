@@ -8,24 +8,12 @@ import { NextResponse } from "next/server";
 const MODEL = "llama-3.3-70b-versatile";
 const PROVIDER_TIMEOUT_MS = 20_000;
 
-interface QuickExplanation {
-  bullets: [string, string, string];
-  analogy: string;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isQuickExplanation(value: unknown): value is QuickExplanation {
-  return (
-    isRecord(value) &&
-    Array.isArray(value.bullets) &&
-    value.bullets.length === 3 &&
-    value.bullets.every((bullet) => typeof bullet === "string" && bullet.trim().length > 0) &&
-    typeof value.analogy === "string" &&
-    value.analogy.trim().length > 0
-  );
+function isQuickExplanation(value: unknown): value is { explanation: string } {
+  return isRecord(value) && typeof value.explanation === "string" && value.explanation.trim().length > 0;
 }
 
 function sanitizeJson(content: string) {
@@ -74,7 +62,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            'You are a concise academic tutor. Return only valid JSON with exactly this shape: {"bullets":["...","...","..."],"analogy":"..."}. Provide exactly three short explanatory bullets and one simple everyday analogy. Do not use markdown or add any other fields.',
+            'You are a concise academic tutor. Return only valid JSON with exactly this shape: {"explanation":"..."}. The explanation must contain exactly three short bullet points and one simple everyday analogy. Keep it under 120 words. Do not add any other fields.',
         },
         {
           role: "user",
@@ -115,7 +103,10 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof APIError) {
-      console.error("Groq rejected the quick explanation request.", { status: error.status });
+      console.error("Groq rejected the quick explanation request.", {
+        status: error.status,
+        message: error.message,
+      });
       return NextResponse.json({ error: "The AI service could not explain this topic right now." }, { status: 502 });
     }
 

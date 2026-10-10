@@ -841,7 +841,7 @@ function DayAccordion({ day, expanded, isToday, onToggle, onTopicToggle }: { day
 function QuickExplainButton({ topic }: { topic: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [explanation, setExplanation] = useState<{ bullets: string[]; analogy: string } | null>(null);
+  const [explanation, setExplanation] = useState("");
   const [error, setError] = useState("");
 
   async function explainTopic() {
@@ -851,20 +851,24 @@ function QuickExplainButton({ topic }: { topic: string }) {
 
     setIsLoading(true);
     try {
-      const response = await fetch("/api/quick-explain", {
+      const response = await fetch("/api/explain-topic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic }),
       });
-      const data = (await response.json()) as {
-        bullets?: string[];
-        analogy?: string;
-        error?: string;
-      };
-      if (!response.ok || !Array.isArray(data.bullets) || typeof data.analogy !== "string") {
-        throw new Error(data.error || "Unable to explain this topic.");
+      const responseText = await response.text();
+      let data: { explanation?: string; error?: string } = {};
+      try {
+        data = JSON.parse(responseText) as { explanation?: string; error?: string };
+      } catch {
+        throw new Error(
+          responseText.trim() || `The explanation service returned HTTP ${response.status}.`,
+        );
       }
-      setExplanation({ bullets: data.bullets, analogy: data.analogy });
+      if (!response.ok || typeof data.explanation !== "string" || data.explanation.trim().length === 0) {
+        throw new Error(data.error || `The explanation service returned HTTP ${response.status}.`);
+      }
+      setExplanation(data.explanation);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to explain this topic.");
     } finally {
@@ -899,7 +903,7 @@ function QuickExplainButton({ topic }: { topic: string }) {
             </div>
             {isLoading && <div className="flex items-center gap-2 py-10 text-sm font-semibold text-slate-500"><Loader2 className="animate-spin text-violet-600" size={18} /> Building a concise explanation...</div>}
             {error && <div className="mt-6 rounded-xl border border-rose-100 bg-rose-50 p-4 text-sm font-semibold text-rose-700" role="alert">{error}<button type="button" onClick={() => void explainTopic()} className="ml-2 underline">Try again</button></div>}
-            {explanation && !isLoading && <div className="mt-6 space-y-5"><ul className="space-y-3">{explanation.bullets.slice(0, 3).map((bullet) => <li key={bullet} className="flex gap-3 text-sm leading-6 text-slate-700"><span className="mt-2 size-2 shrink-0 rounded-full bg-violet-500" />{bullet}</li>)}</ul><div className="rounded-2xl bg-violet-50 p-4"><p className="text-xs font-bold uppercase tracking-wider text-violet-700">Simple analogy</p><p className="mt-1 text-sm leading-6 text-violet-950">{explanation.analogy}</p></div></div>}
+            {explanation && !isLoading && <div className="mt-6 whitespace-pre-line rounded-2xl bg-violet-50 p-4 text-sm leading-7 text-violet-950">{explanation}</div>}
           </section>
         </div>
       )}
