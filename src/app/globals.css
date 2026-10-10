@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --font-sans: var(--font-geist-sans);
@@ -20,6 +21,15 @@
   --brand: #5b3df5;
 }
 
+.dark {
+  --background: #080b16;
+  --foreground: #eef2ff;
+  --surface: #111827;
+  --line: #263247;
+  --muted: #94a3b8;
+  --brand: #8b7cff;
+}
+
 * {
   border-color: var(--line);
 }
@@ -28,6 +38,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 ::selection {
@@ -80,11 +91,11 @@ label:has(input:focus-visible) {
   }
 
   .secondary-button {
-    @apply inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-3.5 text-sm font-bold text-slate-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-3.5 text-sm font-bold text-slate-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500 dark:hover:bg-slate-800 dark:hover:text-violet-200;
   }
 
   .surface-card {
-    @apply rounded-2xl border bg-white shadow-[0_12px_35px_rgb(16_17_36_/4%)];
+    @apply rounded-2xl border bg-white shadow-[0_12px_35px_rgb(16_17_36_/4%)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20;
   }
 
   .eyebrow {
@@ -117,6 +128,34 @@ label:has(input:focus-visible) {
   }
 }
 
+.dark .bg-canvas {
+  background-color: var(--background);
+}
+
+.dark .bg-white {
+  background-color: var(--surface);
+}
+
+.dark .text-ink {
+  color: var(--foreground);
+}
+
+.dark .text-slate-950,
+.dark .text-slate-900,
+.dark .text-slate-800 {
+  color: #eef2ff;
+}
+
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: #a8b3c7;
+}
+
+.dark .border-violet-100 {
+  border-color: #3b356b;
+}
+
 @keyframes page-enter {
   from {
     opacity: 0;
@@ -145,5 +184,42 @@ label:has(input:focus-visible) {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+@media print {
+  @page {
+    margin: 0.65in;
+  }
+
+  body {
+    background: white;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  .printable-roadmap {
+    display: block !important;
+    margin: 0 !important;
+  }
+
+  .printable-roadmap > section {
+    width: 100%;
+  }
+
+  .printable-roadmap .rounded-2xl,
+  .printable-roadmap .rounded-xl {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  .printable-roadmap button {
+    color: #101124;
+  }
+
+  .printable-roadmap [class*="bg-white"] {
+    background: white !important;
   }
 }
