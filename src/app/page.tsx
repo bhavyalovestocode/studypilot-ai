@@ -41,8 +41,43 @@ const taskGroups = [
   { key: "practiceQuestions", label: "Active practice" },
 ] as const;
 
+function normalizeTask(value: unknown, fallbackId: string): StudyTask {
+  const task = value && typeof value === "object" ? value as Partial<StudyTask> : {};
+  return {
+    id: typeof task.id === "string" && task.id ? task.id : fallbackId,
+    title: typeof task.title === "string" ? task.title : "Study task",
+    subject: typeof task.subject === "string" ? task.subject : "General",
+    estimatedMinutes: typeof task.estimatedMinutes === "number" && Number.isFinite(task.estimatedMinutes)
+      ? Math.max(0, task.estimatedMinutes)
+      : 0,
+    completed: task.completed === true,
+  };
+}
+
+function normalizeRoadmap(value: unknown): RoadmapDay[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.reduce<RoadmapDay[]>((days, item, dayIndex) => {
+    if (!item || typeof item !== "object") return days;
+    const rawDay = item as Partial<RoadmapDay>;
+    const getTasks = (key: (typeof taskGroups)[number]["key"]) =>
+      (Array.isArray(rawDay[key]) ? rawDay[key] : []).map((task, taskIndex) =>
+        normalizeTask(task, `day-${dayIndex + 1}-${key}-${taskIndex + 1}`),
+      );
+
+    days.push({
+      day: typeof rawDay.day === "number" ? rawDay.day : dayIndex + 1,
+      date: typeof rawDay.date === "string" ? rawDay.date : "",
+      theoryTopics: getTasks("theoryTopics"),
+      exercises: getTasks("exercises"),
+      practiceQuestions: getTasks("practiceQuestions"),
+    });
+    return days;
+  }, []);
+}
+
 function getDayTasks(day: RoadmapDay) {
-  return taskGroups.flatMap(({ key }) => day[key]);
+  return taskGroups.flatMap(({ key }) => day?.[key] ?? []);
 }
 
 const STORAGE_KEY = "studypilot-roadmap";
@@ -96,8 +131,8 @@ export default function Home() {
       if (storedExamDate) setExamDate(storedExamDate);
       if (storedRoadmap) {
         try {
-          const saved = JSON.parse(storedRoadmap) as RoadmapDay[];
-          if (Array.isArray(saved) && saved.length > 0) {
+          const saved = normalizeRoadmap(JSON.parse(storedRoadmap));
+          if (saved.length > 0) {
             setRoadmap(saved);
             setView("dashboard");
           }
@@ -138,16 +173,20 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ syllabusText, examDate, dailyHours }),
       });
-      let data: { roadmap?: RoadmapDay[]; error?: string };
+      let data: { roadmap?: unknown; error?: string };
       try {
-        data = (await response.json()) as { roadmap?: RoadmapDay[]; error?: string };
+        data = (await response.json()) as { roadmap?: unknown; error?: string };
       } catch {
         throw new Error("The server returned an invalid response. Please try again.");
       }
       if (!response.ok || !data.roadmap) {
         throw new Error(data.error || "Unable to generate your strategy.");
       }
-      setRoadmap(data.roadmap);
+      const normalizedRoadmap = normalizeRoadmap(data.roadmap);
+      if (normalizedRoadmap.length === 0 && data.roadmap !== undefined) {
+        throw new Error("The server returned an invalid roadmap. Please try again.");
+      }
+      setRoadmap(normalizedRoadmap);
       window.localStorage.setItem(EXAM_DATE_STORAGE_KEY, examDate);
       setExpandedDays([1]);
       setNotice("Your personalized roadmap is ready.");
@@ -174,7 +213,7 @@ export default function Home() {
               ...Object.fromEntries(
                 taskGroups.map(({ key }) => [
                   key,
-                  day[key].map((topic) =>
+                  (day?.[key] ?? []).map((topic) =>
                     topic.id === topicId ? { ...topic, completed: !topic.completed } : topic,
                   ),
                 ]),
@@ -202,7 +241,7 @@ export default function Home() {
       setRoadmap((current) => {
         const unfinished = current.flatMap((day) =>
           taskGroups.flatMap(({ key }) =>
-            day[key]
+            (day?.[key] ?? [])
               .filter((topic) => !topic.completed)
               .map((topic) => ({ key, topic })),
           ),
@@ -210,7 +249,7 @@ export default function Home() {
         const completedByDay = current.map((day) => ({
           ...day,
           ...Object.fromEntries(
-            taskGroups.map(({ key }) => [key, day[key].filter((topic) => topic.completed)]),
+            taskGroups.map(({ key }) => [key, (day?.[key] ?? []).filter((topic) => topic.completed)]),
           ),
         }));
         const capacity = dailyHours * 60;
@@ -223,7 +262,7 @@ export default function Home() {
             (minutes + unfinished[topicIndex].topic.estimatedMinutes <= capacity || planned.length === 0)
           ) {
             const task = unfinished[topicIndex];
-            day[task.key].push(task.topic);
+            (day[task.key] ??= []).push(task.topic);
             planned.push(task.topic);
             minutes += task.topic.estimatedMinutes;
             topicIndex += 1;
@@ -232,7 +271,7 @@ export default function Home() {
         });
         if (topicIndex < unfinished.length && rebalanced.length > 0) {
           const lastDay = rebalanced[rebalanced.length - 1];
-          unfinished.slice(topicIndex).forEach(({ key, topic }) => lastDay[key].push(topic));
+          unfinished.slice(topicIndex).forEach(({ key, topic }) => (lastDay[key] ??= []).push(topic));
         }
         return rebalanced;
       });
@@ -509,6 +548,6 @@ function DayAccordion({ day, expanded, isToday, onToggle, onTopicToggle }: { day
       <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{formatDate(day.date)}</p>{isToday && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-700">Today</span>}{completed === tasks.length && tasks.length > 0 && <Check className="text-emerald-500" size={15} aria-label="Complete" />}</div><p className="mt-1 text-xs text-slate-500">{tasks.length === 0 ? "Rest day" : `${completed} of ${tasks.length} tasks complete`}</p></div>
       <ChevronDown className={`text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} size={20} />
     </button>
-    {expanded && <div className="border-t px-4 pb-4 sm:px-5 sm:pb-5">{tasks.length === 0 ? <p className="pt-4 text-sm text-slate-400">No study tasks planned for this day.</p> : <div className="space-y-5 pt-3">{taskGroups.map(({ key, label }) => <section key={key}><h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</h4><div className="space-y-2">{day[key].map((task) => <label key={task.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${task.completed ? "border-emerald-100 bg-emerald-50/60" : "hover:border-violet-100 hover:bg-violet-50/30"}`}><input type="checkbox" checked={task.completed} onChange={() => onTopicToggle(day.day, task.id)} className="peer sr-only" /><span className={`flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${task.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{task.completed && <Check size={13} strokeWidth={3} />}</span><span className="min-w-0 flex-1"><span className={`block text-sm font-semibold ${task.completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{task.title}</span><span className="mt-1 block text-xs text-slate-400">{task.subject} · {formatMinutes(task.estimatedMinutes)}</span></span><span className={`text-[11px] font-semibold ${task.completed ? "text-emerald-600" : "text-slate-400"}`}>{task.completed ? "Done" : "To do"}</span></label>)}</div></section>)}</div>}</div>}
+    {expanded && <div className="border-t px-4 pb-4 sm:px-5 sm:pb-5">{tasks.length === 0 ? <p className="pt-4 text-sm text-slate-400">No study tasks planned for this day.</p> : <div className="space-y-5 pt-3">{taskGroups.map(({ key, label }) => <section key={key}><h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</h4><div className="space-y-2">{(day?.[key] ?? []).map((task) => <label key={task.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${task.completed ? "border-emerald-100 bg-emerald-50/60" : "hover:border-violet-100 hover:bg-violet-50/30"}`}><input type="checkbox" checked={task.completed} onChange={() => onTopicToggle(day.day, task.id)} className="peer sr-only" /><span className={`flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${task.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{task.completed && <Check size={13} strokeWidth={3} />}</span><span className="min-w-0 flex-1"><span className={`block text-sm font-semibold ${task.completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{task.title}</span><span className="mt-1 block text-xs text-slate-400">{task.subject} · {formatMinutes(task.estimatedMinutes)}</span></span><span className={`text-[11px] font-semibold ${task.completed ? "text-emerald-600" : "text-slate-400"}`}>{task.completed ? "Done" : "To do"}</span></label>)}</div></section>)}</div>}</div>}
   </div>;
 }

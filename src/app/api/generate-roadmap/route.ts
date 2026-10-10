@@ -75,6 +75,20 @@ function getUtcDate(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
+function sanitizeJsonResponse(content: string): string {
+  const trimmed = content.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const withoutCodeBlock = fencedMatch?.[1]?.trim() ?? trimmed;
+  const objectStart = withoutCodeBlock.indexOf("{");
+  const objectEnd = withoutCodeBlock.lastIndexOf("}");
+
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    return withoutCodeBlock.slice(objectStart, objectEnd + 1);
+  }
+
+  return withoutCodeBlock;
+}
+
 export async function POST(request: Request) {
   let body: unknown;
 
@@ -226,7 +240,7 @@ ${syllabusText.trim()}`,
 
     let parsedResponse: unknown;
     try {
-      parsedResponse = JSON.parse(content);
+      parsedResponse = JSON.parse(sanitizeJsonResponse(content));
     } catch {
       return NextResponse.json({ error: "Groq returned invalid JSON." }, { status: 502 });
     }

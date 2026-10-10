@@ -103,6 +103,19 @@ describe("POST /api/generate-roadmap", () => {
     );
   });
 
+  it("accepts JSON wrapped in a markdown code block", async () => {
+    mockCompletion(`Here is your roadmap:
+\`\`\`json
+${JSON.stringify(validRoadmap)}
+\`\`\``);
+    const { POST } = await import("./route");
+
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(validRoadmap);
+  });
+
   it("rejects a roadmap day without all structured study blocks", async () => {
     mockCompletion(JSON.stringify({
       roadmap: [{ day: 1, date: "2026-10-09", theoryTopics: validRoadmap.roadmap[0].theoryTopics, exercises: [], practiceQuestions: validRoadmap.roadmap[0].practiceQuestions }],
