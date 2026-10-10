@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-type Topic = {
+type StudyTask = {
   id: string;
   title: string;
   subject: string;
@@ -30,8 +30,20 @@ type Topic = {
 type RoadmapDay = {
   day: number;
   date: string;
-  topics: Topic[];
+  theoryTopics: StudyTask[];
+  exercises: StudyTask[];
+  practiceQuestions: StudyTask[];
 };
+
+const taskGroups = [
+  { key: "theoryTopics", label: "Theory & review" },
+  { key: "exercises", label: "Chapter exercises" },
+  { key: "practiceQuestions", label: "Active practice" },
+] as const;
+
+function getDayTasks(day: RoadmapDay) {
+  return taskGroups.flatMap(({ key }) => day[key]);
+}
 
 const STORAGE_KEY = "studypilot-roadmap";
 const EXAM_DATE_STORAGE_KEY = "studypilot-exam-date";
@@ -105,9 +117,9 @@ export default function Home() {
   }, [roadmap]);
 
   const stats = useMemo(() => {
-    const topics = roadmap.flatMap((day) => day.topics);
+    const topics = roadmap.flatMap(getDayTasks);
     const completed = topics.filter((topic) => topic.completed).length;
-    const activeDays = roadmap.filter((day) => day.topics.some((topic) => topic.completed)).length;
+    const activeDays = roadmap.filter((day) => getDayTasks(day).some((topic) => topic.completed)).length;
     return {
       total: topics.length,
       completed,
@@ -159,8 +171,13 @@ export default function Home() {
         day.day === dayNumber
           ? {
               ...day,
-              topics: day.topics.map((topic) =>
-                topic.id === topicId ? { ...topic, completed: !topic.completed } : topic,
+              ...Object.fromEntries(
+                taskGroups.map(({ key }) => [
+                  key,
+                  day[key].map((topic) =>
+                    topic.id === topicId ? { ...topic, completed: !topic.completed } : topic,
+                  ),
+                ]),
               ),
             }
           : day,
@@ -183,31 +200,39 @@ export default function Home() {
     window.setTimeout(() => {
       try {
       setRoadmap((current) => {
-        const unfinished = current.flatMap((day) => day.topics.filter((topic) => !topic.completed));
+        const unfinished = current.flatMap((day) =>
+          taskGroups.flatMap(({ key }) =>
+            day[key]
+              .filter((topic) => !topic.completed)
+              .map((topic) => ({ key, topic })),
+          ),
+        );
         const completedByDay = current.map((day) => ({
           ...day,
-          topics: day.topics.filter((topic) => topic.completed),
+          ...Object.fromEntries(
+            taskGroups.map(({ key }) => [key, day[key].filter((topic) => topic.completed)]),
+          ),
         }));
         const capacity = dailyHours * 60;
         let topicIndex = 0;
         const rebalanced = completedByDay.map((day) => {
-          const planned = [...day.topics];
+          const planned = getDayTasks(day);
           let minutes = planned.reduce((sum, topic) => sum + topic.estimatedMinutes, 0);
           while (
             topicIndex < unfinished.length &&
-            (minutes + unfinished[topicIndex].estimatedMinutes <= capacity || planned.length === 0)
+            (minutes + unfinished[topicIndex].topic.estimatedMinutes <= capacity || planned.length === 0)
           ) {
-            planned.push(unfinished[topicIndex]);
-            minutes += unfinished[topicIndex].estimatedMinutes;
+            const task = unfinished[topicIndex];
+            day[task.key].push(task.topic);
+            planned.push(task.topic);
+            minutes += task.topic.estimatedMinutes;
             topicIndex += 1;
           }
-          return { ...day, topics: planned };
+          return day;
         });
         if (topicIndex < unfinished.length && rebalanced.length > 0) {
-          rebalanced[rebalanced.length - 1] = {
-            ...rebalanced[rebalanced.length - 1],
-            topics: [...rebalanced[rebalanced.length - 1].topics, ...unfinished.slice(topicIndex)],
-          };
+          const lastDay = rebalanced[rebalanced.length - 1];
+          unfinished.slice(topicIndex).forEach(({ key, topic }) => lastDay[key].push(topic));
         }
         return rebalanced;
       });
@@ -430,7 +455,9 @@ function DashboardView({
   const daysUntilExam = getDaysUntil(examDate);
   const today = getTodayString();
   const todayDay = roadmap.find((day) => day.date === today);
-  const plannedMinutes = todayDay?.topics.reduce((sum, topic) => sum + topic.estimatedMinutes, 0) ?? 0;
+  const plannedMinutes = todayDay
+    ? getDayTasks(todayDay).reduce((sum, topic) => sum + topic.estimatedMinutes, 0)
+    : 0;
 
   return (
     <div className="page-enter">
@@ -448,7 +475,7 @@ function DashboardView({
         <StatCard icon={<BarChart3 size={18} />} label="Total topics" value={stats.total} detail="in your roadmap" color="indigo" />
         <StatCard icon={<Check size={18} />} label="Completed" value={stats.completed} detail={`${stats.percent}% complete`} color="emerald" />
         <StatCard icon={<TrendingUp size={18} />} label="Remaining" value={Math.max(stats.total - stats.completed, 0)} detail="topics to go" color="orange" />
-        <StatCard icon={<Clock3 size={18} />} label="Today planned" value={formatMinutes(plannedMinutes)} detail={todayDay ? `${todayDay.topics.length} topics today` : "No topics today"} color="violet" />
+        <StatCard icon={<Clock3 size={18} />} label="Today planned" value={formatMinutes(plannedMinutes)} detail={todayDay ? `${getDayTasks(todayDay).length} tasks today` : "No tasks today"} color="violet" />
       </div>
       <div id="progress" className="surface-card mt-5 p-5"><div className="mb-3 flex justify-between text-sm font-bold"><span>Overall completion</span><span className="text-violet-600">{stats.percent}%</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="progress-fill h-full rounded-full bg-gradient-to-r from-violet-600 to-indigo-500 transition-all duration-500" style={{ width: `${stats.percent}%` }} /></div></div>
       <div id="roadmap" className="mt-10 grid gap-8 xl:grid-cols-[1fr_300px]">
@@ -474,6 +501,14 @@ function EmptyRoadmap({ onNewStrategy }: { onNewStrategy: () => void }) {
 }
 
 function DayAccordion({ day, expanded, isToday, onToggle, onTopicToggle }: { day: RoadmapDay; expanded: boolean; isToday: boolean; onToggle: () => void; onTopicToggle: (day: number, id: string) => void }) {
-  const completed = day.topics.filter((topic) => topic.completed).length;
-  return <div className={`overflow-hidden rounded-2xl border bg-white transition-all duration-200 ${isToday ? "border-violet-300 ring-2 ring-violet-100" : ""} ${expanded ? "shadow-md shadow-violet-100/50" : "shadow-[0_6px_20px_rgb(16_17_36_/3%)] hover:border-violet-100"}`}><button onClick={onToggle} aria-expanded={expanded} className="flex w-full items-center gap-4 p-4 text-left sm:p-5"><div className={`flex size-11 shrink-0 flex-col items-center justify-center rounded-xl ${completed === day.topics.length && day.topics.length > 0 ? "bg-emerald-50 text-emerald-600" : "bg-violet-50 text-violet-600"}`}><span className="text-[10px] font-bold uppercase">Day</span><span className="text-lg font-black leading-4">{day.day}</span></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{formatDate(day.date)}</p>{isToday && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-700">Today</span>}{completed === day.topics.length && day.topics.length > 0 && <Check className="text-emerald-500" size={15} aria-label="Complete" />}</div><p className="mt-1 text-xs text-slate-500">{day.topics.length === 0 ? "Rest day" : `${completed} of ${day.topics.length} topics complete`}</p></div><ChevronDown className={`text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} size={20} /></button>{expanded && <div className="border-t px-4 pb-4 sm:px-5 sm:pb-5">{day.topics.length === 0 ? <p className="pt-4 text-sm text-slate-400">No study tasks planned for this day.</p> : <div className="space-y-2 pt-3">{day.topics.map((topic) => <label key={topic.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${topic.completed ? "border-emerald-100 bg-emerald-50/60" : "hover:border-violet-100 hover:bg-violet-50/30"}`}><input type="checkbox" checked={topic.completed} onChange={() => onTopicToggle(day.day, topic.id)} className="peer sr-only" /><span className={`flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${topic.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{topic.completed && <Check size={13} strokeWidth={3} />}</span><span className="min-w-0 flex-1"><span className={`block text-sm font-semibold ${topic.completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{topic.title}</span><span className="mt-1 block text-xs text-slate-400">{topic.subject} · {formatMinutes(topic.estimatedMinutes)}</span></span><span className={`text-[11px] font-semibold ${topic.completed ? "text-emerald-600" : "text-slate-400"}`}>{topic.completed ? "Done" : "To do"}</span></label>)}</div>}</div>}</div>;
+  const tasks = getDayTasks(day);
+  const completed = tasks.filter((task) => task.completed).length;
+  return <div className={`overflow-hidden rounded-2xl border bg-white transition-all duration-200 ${isToday ? "border-violet-300 ring-2 ring-violet-100" : ""} ${expanded ? "shadow-md shadow-violet-100/50" : "shadow-[0_6px_20px_rgb(16_17_36_/3%)] hover:border-violet-100"}`}>
+    <button onClick={onToggle} aria-expanded={expanded} className="flex w-full items-center gap-4 p-4 text-left sm:p-5">
+      <div className={`flex size-11 shrink-0 flex-col items-center justify-center rounded-xl ${completed === tasks.length && tasks.length > 0 ? "bg-emerald-50 text-emerald-600" : "bg-violet-50 text-violet-600"}`}><span className="text-[10px] font-bold uppercase">Day</span><span className="text-lg font-black leading-4">{day.day}</span></div>
+      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{formatDate(day.date)}</p>{isToday && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-700">Today</span>}{completed === tasks.length && tasks.length > 0 && <Check className="text-emerald-500" size={15} aria-label="Complete" />}</div><p className="mt-1 text-xs text-slate-500">{tasks.length === 0 ? "Rest day" : `${completed} of ${tasks.length} tasks complete`}</p></div>
+      <ChevronDown className={`text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} size={20} />
+    </button>
+    {expanded && <div className="border-t px-4 pb-4 sm:px-5 sm:pb-5">{tasks.length === 0 ? <p className="pt-4 text-sm text-slate-400">No study tasks planned for this day.</p> : <div className="space-y-5 pt-3">{taskGroups.map(({ key, label }) => <section key={key}><h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</h4><div className="space-y-2">{day[key].map((task) => <label key={task.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${task.completed ? "border-emerald-100 bg-emerald-50/60" : "hover:border-violet-100 hover:bg-violet-50/30"}`}><input type="checkbox" checked={task.completed} onChange={() => onTopicToggle(day.day, task.id)} className="peer sr-only" /><span className={`flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${task.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{task.completed && <Check size={13} strokeWidth={3} />}</span><span className="min-w-0 flex-1"><span className={`block text-sm font-semibold ${task.completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{task.title}</span><span className="mt-1 block text-xs text-slate-400">{task.subject} · {formatMinutes(task.estimatedMinutes)}</span></span><span className={`text-[11px] font-semibold ${task.completed ? "text-emerald-600" : "text-slate-400"}`}>{task.completed ? "Done" : "To do"}</span></label>)}</div></section>)}</div>}</div>}
+  </div>;
 }

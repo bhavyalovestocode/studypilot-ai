@@ -11,7 +11,7 @@ const MAX_DAILY_HOURS = 12;
 const PROVIDER_TIMEOUT_MS = 30_000;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
-interface RoadmapTopic {
+interface RoadmapTask {
   id: string;
   title: string;
   subject: string;
@@ -22,7 +22,9 @@ interface RoadmapTopic {
 interface RoadmapDay {
   day: number;
   date: string;
-  topics: RoadmapTopic[];
+  theoryTopics: RoadmapTask[];
+  exercises: RoadmapTask[];
+  practiceQuestions: RoadmapTask[];
 }
 
 interface RoadmapResponse {
@@ -43,27 +45,29 @@ function isRoadmapResponse(value: unknown): value is RoadmapResponse {
       !isRecord(day) ||
       typeof day.day !== "number" ||
       typeof day.date !== "string" ||
-      !Array.isArray(day.topics)
+      !Array.isArray(day.theoryTopics) ||
+      !Array.isArray(day.exercises) ||
+      !Array.isArray(day.practiceQuestions) ||
+      day.theoryTopics.length === 0 ||
+      day.exercises.length === 0 ||
+      day.practiceQuestions.length === 0
     ) {
       return false;
     }
 
-    return day.topics.every((topic) => {
-      if (
-        !isRecord(topic) ||
-        typeof topic.id !== "string" ||
-        typeof topic.title !== "string" ||
-        typeof topic.subject !== "string" ||
-        typeof topic.estimatedMinutes !== "number" ||
-        !Number.isFinite(topic.estimatedMinutes) ||
-        topic.estimatedMinutes < 0 ||
-        typeof topic.completed !== "boolean"
-      ) {
-        return false;
-      }
-
-      return true;
-    });
+    return [day.theoryTopics, day.exercises, day.practiceQuestions].every((tasks) =>
+      tasks.every(
+        (task) =>
+          isRecord(task) &&
+          typeof task.id === "string" &&
+          typeof task.title === "string" &&
+          typeof task.subject === "string" &&
+          typeof task.estimatedMinutes === "number" &&
+          Number.isFinite(task.estimatedMinutes) &&
+          task.estimatedMinutes > 0 &&
+          typeof task.completed === "boolean",
+      ),
+    );
   });
 }
 
@@ -148,9 +152,10 @@ CRITICAL SCHEDULING & PEDAGOGY RULES:
    - Core Topic Review / Reading
    - Chapter Exercises (applying concepts learned)
    - Active Practice Questions / Problem-Solving blocks
+   Every study day must contain at least one concrete task in each of the three JSON arrays: "theoryTopics", "exercises", and "practiceQuestions". A day containing only topic titles is invalid.
 3. DAILY HOUR BUDGET: The user has specified a maximum of ${dailyHours} hours per day. Allocate time slots realistically (e.g., 60% theory/exercises, 40% active practice) so daily hours match this budget without overloading or underutilizing time.
 4. PACING & AVOIDANCE OF EARLY FINISHES: Never finish the entire syllabus in 1-2 days and mark the rest as "rest". Keep a steady, sustainable daily cognitive load right up until the exam date.
-5. JSON FORMAT: Return strictly valid JSON matching the requested schema. No conversational intro or outro text.
+5. JSON FORMAT: Return strictly valid JSON matching the requested schema. No conversational intro or outro text. Never use a generic "topics" field.
 `;
 
   try {
@@ -175,12 +180,30 @@ Return STRICT JSON with exactly this shape:
     {
       "day": 1,
       "date": "YYYY-MM-DD",
-      "topics": [
+      "theoryTopics": [
         {
-          "id": "unique-string",
-          "title": "Topic title",
+          "id": "unique-theory-string",
+          "title": "Core topic review or reading",
           "subject": "Subject name",
           "estimatedMinutes": 60,
+          "completed": false
+        }
+      ],
+      "exercises": [
+        {
+          "id": "unique-exercise-string",
+          "title": "Chapter exercise set",
+          "subject": "Subject name",
+          "estimatedMinutes": 30,
+          "completed": false
+        }
+      ],
+      "practiceQuestions": [
+        {
+          "id": "unique-practice-string",
+          "title": "Active practice question set",
+          "subject": "Subject name",
+          "estimatedMinutes": 30,
           "completed": false
         }
       ]
@@ -188,7 +211,7 @@ Return STRICT JSON with exactly this shape:
   ]
 }
 
-Create one roadmap entry for each study day from today through the day before the exam. Use at most ${dailyHours * 60} total estimated minutes per day. Set every completed value to false. Use unique topic IDs. If there are no study days, return {"roadmap":[]}.
+Create one roadmap entry for each study day from today through the day before the exam. Every study day MUST have at least one item in each of "theoryTopics", "exercises", and "practiceQuestions"; never replace these arrays with a generic "topics" array. Each item must be a concrete, actionable task, not just a subject label. Distribute the syllabus across all available days. Use at most ${dailyHours * 60} total estimated minutes across all three arrays per day, and allocate time to theory, exercises, and practice realistically. Set every completed value to false. Use unique IDs across the entire roadmap. If there are no study days, return {"roadmap":[]}.
 
 Syllabus:
 ${syllabusText.trim()}`,

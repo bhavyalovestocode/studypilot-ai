@@ -12,12 +12,30 @@ const validRoadmap = {
     {
       day: 1,
       date: "2026-10-09",
-      topics: [
+      theoryTopics: [
         {
-          id: "algebra-1",
-          title: "Linear equations",
+          id: "algebra-theory-1",
+          title: "Review linear equations",
           subject: "Algebra",
           estimatedMinutes: 60,
+          completed: false,
+        },
+      ],
+      exercises: [
+        {
+          id: "algebra-exercise-1",
+          title: "Complete linear equation exercises",
+          subject: "Algebra",
+          estimatedMinutes: 30,
+          completed: false,
+        },
+      ],
+      practiceQuestions: [
+        {
+          id: "algebra-practice-1",
+          title: "Solve linear equation practice questions",
+          subject: "Algebra",
+          estimatedMinutes: 30,
           completed: false,
         },
       ],
@@ -83,6 +101,18 @@ describe("POST /api/generate-roadmap", () => {
     expect(mockedGroq).toHaveBeenCalledWith(
       expect.objectContaining({ timeout: 30_000, maxRetries: 0 }),
     );
+  });
+
+  it("rejects a roadmap day without all structured study blocks", async () => {
+    mockCompletion(JSON.stringify({
+      roadmap: [{ day: 1, date: "2026-10-09", theoryTopics: validRoadmap.roadmap[0].theoryTopics, exercises: [], practiceQuestions: validRoadmap.roadmap[0].practiceQuestions }],
+    }));
+    const { POST } = await import("./route");
+
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "Groq returned JSON that does not match the roadmap schema." });
   });
 
   it("returns a safe error when the provider fails", async () => {
