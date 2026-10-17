@@ -1,0 +1,3 @@
+Project: StudyPilot AI 
+Hackathon: BharatCode Build League
+Public URL -  https://studypilot-ai-beta.vercel.app/
