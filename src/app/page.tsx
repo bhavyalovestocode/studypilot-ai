@@ -24,93 +24,27 @@ import {
   Play,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ThemeToggle } from "./theme-toggle";
-
-type StudyTask = {
-  id: string;
-  title: string;
-  subject: string;
-  estimatedMinutes: number;
-  completed: boolean;
-};
-
-type RoadmapDay = {
-  day: number;
-  date: string;
-  theoryTopics: StudyTask[];
-  exercises: StudyTask[];
-  practiceQuestions: StudyTask[];
-};
-
-const taskGroups = [
-  { key: "theoryTopics", label: "Theory & review" },
-  { key: "exercises", label: "Chapter exercises" },
-  { key: "practiceQuestions", label: "Active practice" },
-] as const;
-
-function normalizeTask(value: unknown, fallbackId: string): StudyTask {
-  const task = value && typeof value === "object" ? value as Partial<StudyTask> : {};
-  return {
-    id: typeof task.id === "string" && task.id ? task.id : fallbackId,
-    title: typeof task.title === "string" ? task.title : "Study task",
-    subject: typeof task.subject === "string" ? task.subject : "General",
-    estimatedMinutes: typeof task.estimatedMinutes === "number" && Number.isFinite(task.estimatedMinutes)
-      ? Math.max(0, task.estimatedMinutes)
-      : 0,
-    completed: task.completed === true,
-  };
-}
-
-function normalizeRoadmap(value: unknown): RoadmapDay[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.reduce<RoadmapDay[]>((days, item, dayIndex) => {
-    if (!item || typeof item !== "object") return days;
-    const rawDay = item as Partial<RoadmapDay>;
-    const getTasks = (key: (typeof taskGroups)[number]["key"]) =>
-      (Array.isArray(rawDay[key]) ? rawDay[key] : []).map((task, taskIndex) =>
-        normalizeTask(task, `day-${dayIndex + 1}-${key}-${taskIndex + 1}`),
-      );
-
-    days.push({
-      day: typeof rawDay.day === "number" ? rawDay.day : dayIndex + 1,
-      date: typeof rawDay.date === "string" ? rawDay.date : "",
-      theoryTopics: getTasks("theoryTopics"),
-      exercises: getTasks("exercises"),
-      practiceQuestions: getTasks("practiceQuestions"),
-    });
-    return days;
-  }, []);
-}
-
-function getDayTasks(day: RoadmapDay) {
-  return taskGroups.flatMap(({ key }) => day?.[key] ?? []);
-}
+import {
+  calculateProgress,
+  getDayTasks,
+  isValidStoredRoadmap,
+  normalizeRoadmap,
+  rebalanceRoadmap,
+  taskGroups,
+  type RoadmapDay,
+} from "./roadmap-utils";
 
 const STORAGE_KEY = "studypilot-roadmap";
 const EXAM_DATE_STORAGE_KEY = "studypilot-exam-date";
 const STREAK_STORAGE_KEY = "studypilot-streak";
-
-type ProgressSummary = {
-  total: number;
-  completed: number;
-  percentage: number;
-};
+const SETUP_DRAFT_STORAGE_KEY = "studypilot-setup-draft";
+const STORAGE_VERSION = 2;
 
 type StreakRecord = {
   completedDates: string[];
 };
-
-export function calculateProgress(roadmap: RoadmapDay[]): ProgressSummary {
-  const tasks = roadmap.flatMap(getDayTasks);
-  const completed = tasks.filter((task) => task.completed).length;
-  return {
-    total: tasks.length,
-    completed,
-    percentage: tasks.length ? Math.round((completed / tasks.length) * 100) : 0,
-  };
-}
 
 function calculateStreak(completedDates: string[]) {
   const dates = [...new Set(completedDates)].sort().reverse();
@@ -217,11 +151,13 @@ export default function Home() {
   const [roadmap, setRoadmap] = useState<RoadmapDay[]>([]);
   const [expandedDays, setExpandedDays] = useState<number[]>([1]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isRebalancing, setIsRebalancing] = useState(false);
+  const [rebalancePreview, setRebalancePreview] = useState<ReturnType<typeof rebalanceRoadmap> | null>(null);
+  const [previousRoadmap, setPreviousRoadmap] = useState<RoadmapDay[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [rebalancingError, setRebalancingError] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileNavTriggerRef = useRef<HTMLButtonElement>(null);
   const [storedStreakDates] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -237,14 +173,37 @@ export default function Home() {
   useEffect(() => {
     const storedRoadmap = window.localStorage.getItem(STORAGE_KEY);
     const storedExamDate = window.localStorage.getItem(EXAM_DATE_STORAGE_KEY);
+    const storedDraft = window.localStorage.getItem(SETUP_DRAFT_STORAGE_KEY);
     const restoreTimer = window.setTimeout(() => {
       if (storedExamDate) setExamDate(storedExamDate);
+      if (storedDraft) {
+        try {
+          const draft = JSON.parse(storedDraft) as {
+            syllabusText?: unknown;
+            examDate?: unknown;
+            dailyHours?: unknown;
+          };
+          if (typeof draft.syllabusText === "string") setSyllabusText(draft.syllabusText);
+          if (!storedExamDate && typeof draft.examDate === "string") setExamDate(draft.examDate);
+          if (typeof draft.dailyHours === "number" && Number.isFinite(draft.dailyHours)) {
+            setDailyHours(Math.min(12, Math.max(1, draft.dailyHours)));
+          }
+        } catch {
+          window.localStorage.removeItem(SETUP_DRAFT_STORAGE_KEY);
+        }
+      }
       if (storedRoadmap) {
         try {
-          const saved = normalizeRoadmap(JSON.parse(storedRoadmap));
-          if (saved.length > 0) {
+          const parsed = JSON.parse(storedRoadmap) as { version?: number; roadmap?: unknown } | unknown;
+          const candidate = parsed && typeof parsed === "object" && "roadmap" in parsed
+            ? parsed.roadmap
+            : parsed;
+          const saved = normalizeRoadmap(candidate);
+          if (isValidStoredRoadmap(saved)) {
             setRoadmap(saved);
             setView("dashboard");
+          } else {
+            window.localStorage.removeItem(STORAGE_KEY);
           }
         } catch {
           window.localStorage.removeItem(STORAGE_KEY);
@@ -257,9 +216,27 @@ export default function Home() {
 
   useEffect(() => {
     if (roadmap.length > 0) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(roadmap));
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, roadmap }));
+      } catch {
+        window.setTimeout(
+          () => setNotice("Your progress is only stored for this session because browser storage is unavailable."),
+          0,
+        );
+      }
     }
   }, [roadmap]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SETUP_DRAFT_STORAGE_KEY,
+        JSON.stringify({ syllabusText, examDate, dailyHours }),
+      );
+    } catch {
+      // The form remains usable when browser storage is unavailable.
+    }
+  }, [syllabusText, examDate, dailyHours]);
 
   const completedStudyDates = useMemo(() => {
     const roadmapDates = new Set(roadmap.map((day) => day.date));
@@ -292,6 +269,20 @@ export default function Home() {
     };
   }, [roadmap, completedStudyDates]);
 
+  useEffect(() => {
+    if (!mobileNavOpen) {
+      mobileNavTriggerRef.current?.focus();
+      return undefined;
+    }
+
+    mobileNavCloseRef.current?.focus();
+    function handleNavigationKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    }
+    window.addEventListener("keydown", handleNavigationKey);
+    return () => window.removeEventListener("keydown", handleNavigationKey);
+  }, [mobileNavOpen]);
+
   async function generateRoadmap() {
     setError("");
     setNotice("");
@@ -312,12 +303,15 @@ export default function Home() {
         throw new Error(data.error || "Unable to generate your strategy.");
       }
       const normalizedRoadmap = normalizeRoadmap(data.roadmap);
-      if (normalizedRoadmap.length === 0 && data.roadmap !== undefined) {
-        throw new Error("The server returned an invalid roadmap. Please try again.");
-      }
       setRoadmap(normalizedRoadmap);
-      window.localStorage.setItem(EXAM_DATE_STORAGE_KEY, examDate);
+      try {
+        window.localStorage.setItem(EXAM_DATE_STORAGE_KEY, examDate);
+      } catch {
+        setNotice("Your roadmap is ready, but browser storage is unavailable. Keep this tab open to retain progress.");
+      }
       setExpandedDays([1]);
+      setRebalancePreview(null);
+      setPreviousRoadmap(null);
       setNotice("Your personalized roadmap is ready.");
       setView("dashboard");
     } catch (generationError) {
@@ -362,55 +356,27 @@ export default function Home() {
   }
 
   function rebalancePlan() {
-    setIsRebalancing(true);
     setNotice("");
-    setRebalancingError("");
-    window.setTimeout(() => {
-      try {
-      setRoadmap((current) => {
-        const unfinished = current.flatMap((day) =>
-          taskGroups.flatMap(({ key }) =>
-            (day?.[key] ?? [])
-              .filter((topic) => !topic.completed)
-              .map((topic) => ({ key, topic })),
-          ),
-        );
-        const completedByDay = current.map((day) => ({
-          ...day,
-          ...Object.fromEntries(
-            taskGroups.map(({ key }) => [key, (day?.[key] ?? []).filter((topic) => topic.completed)]),
-          ),
-        }));
-        const capacity = dailyHours * 60;
-        let topicIndex = 0;
-        const rebalanced = completedByDay.map((day) => {
-          const planned = getDayTasks(day);
-          let minutes = planned.reduce((sum, topic) => sum + topic.estimatedMinutes, 0);
-          while (
-            topicIndex < unfinished.length &&
-            (minutes + unfinished[topicIndex].topic.estimatedMinutes <= capacity || planned.length === 0)
-          ) {
-            const task = unfinished[topicIndex];
-            (day[task.key] ??= []).push(task.topic);
-            planned.push(task.topic);
-            minutes += task.topic.estimatedMinutes;
-            topicIndex += 1;
-          }
-          return day;
-        });
-        if (topicIndex < unfinished.length && rebalanced.length > 0) {
-          const lastDay = rebalanced[rebalanced.length - 1];
-          unfinished.slice(topicIndex).forEach(({ key, topic }) => (lastDay[key] ??= []).push(topic));
-        }
-        return rebalanced;
-      });
-      setIsRebalancing(false);
-      setNotice("Your unfinished topics were redistributed without changing your exam date.");
-      } catch {
-        setIsRebalancing(false);
-        setRebalancingError("We couldn't rebalance your plan. Your existing roadmap is unchanged.");
-      }
-    }, 650);
+    setRebalancePreview(rebalanceRoadmap(roadmap, dailyHours, getTodayString()));
+  }
+
+  function applyRebalance() {
+    if (!rebalancePreview?.isFeasible) return;
+    setPreviousRoadmap(roadmap);
+    setRoadmap(rebalancePreview.proposedRoadmap);
+    setRebalancePreview(null);
+    setNotice(`Redistributed ${rebalancePreview.movedTaskIds.length} unfinished tasks within your daily limit.`);
+  }
+
+  function cancelRebalance() {
+    setRebalancePreview(null);
+  }
+
+  function undoRebalance() {
+    if (!previousRoadmap) return;
+    setRoadmap(previousRoadmap);
+    setPreviousRoadmap(null);
+    setNotice("Your previous schedule has been restored.");
   }
 
   const activeDay = roadmap[0];
@@ -455,7 +421,7 @@ export default function Home() {
 
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b bg-white/75 px-5 backdrop-blur-xl sm:px-8 lg:px-12">
-          <button className="flex items-center gap-2 lg:hidden" onClick={() => setMobileNavOpen(true)}>
+          <button ref={mobileNavTriggerRef} className="flex items-center gap-2 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation menu">
             <Menu size={20} />
             <Brand />
           </button>
@@ -478,13 +444,16 @@ export default function Home() {
               stats={stats}
               activeDay={activeDay}
               expandedDays={expandedDays}
-              isRebalancing={isRebalancing}
+              rebalancePreview={rebalancePreview}
+              canUndoRebalance={Boolean(previousRoadmap)}
               notice={notice}
-              rebalancingError={rebalancingError}
               examDate={examDate}
               onToggleDay={toggleDay}
               onToggleTopic={toggleTopic}
               onRebalance={rebalancePlan}
+              onApplyRebalance={applyRebalance}
+              onCancelRebalance={cancelRebalance}
+              onUndoRebalance={undoRebalance}
               onNewStrategy={() => setView("setup")}
             />
         </main>
@@ -492,8 +461,8 @@ export default function Home() {
 
       {mobileNavOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/30 lg:hidden" onClick={() => setMobileNavOpen(false)}>
-          <div className="h-full w-72 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between"><Brand /><button onClick={() => setMobileNavOpen(false)}><X size={20} /></button></div>
+          <div className="h-full w-72 bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="mobile-navigation-title" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between"><span id="mobile-navigation-title" className="sr-only">Mobile navigation</span><Brand /><button ref={mobileNavCloseRef} onClick={() => setMobileNavOpen(false)} aria-label="Close navigation menu"><X size={20} /></button></div>
             <nav className="mt-12 space-y-2">
               <button className="nav-item nav-item-active" onClick={() => { setView(roadmap.length ? "dashboard" : "setup"); setMobileNavOpen(false); }}><LayoutDashboard size={18} /> Overview</button>
               <button className="nav-item" onClick={() => { setView("setup"); setMobileNavOpen(false); }}><Sparkles size={18} /> New strategy</button>
@@ -553,7 +522,7 @@ function SetupLanding({
         <section>
           <div className="page-enter stagger-1 mb-7 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-violet-700 shadow-sm"><Sparkles size={14} /> AI-powered study planning</div>
           <h1 className="page-enter stagger-2 max-w-2xl text-5xl font-black leading-[0.98] tracking-[-0.065em] text-slate-950 sm:text-7xl">Your syllabus.<br />Your <span className="bg-gradient-to-r from-violet-600 to-indigo-500 bg-clip-text text-transparent">strategy.</span><br />Your success.</h1>
-          <p className="page-enter stagger-3 mt-8 max-w-xl text-base leading-8 text-slate-500 sm:text-lg">StudyPilot AI turns an overwhelming syllabus into an actionable daily roadmap, paced around your exam date, your time, and the way you learn.</p>
+          <p className="page-enter stagger-3 mt-8 max-w-xl text-base leading-8 text-slate-500 sm:text-lg">StudyPilot AI turns your syllabus into a realistic daily checklist, paced around your exam date and available time. Generate a plan, check off work, and preview a safer schedule when you fall behind.</p>
           <div className="page-enter stagger-4 mt-9 grid max-w-xl gap-3 sm:grid-cols-3">
             {[
               ["Personalized roadmaps", "Built around your target"],
@@ -567,12 +536,12 @@ function SetupLanding({
 
         <section className="page-enter stagger-4 surface-card relative p-6 sm:p-9">
           <div className="absolute -right-3 -top-3 flex size-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-xl shadow-violet-200"><Target size={20} /></div>
-          <div className="mb-8"><p className="text-2xl font-black tracking-tight text-slate-950">Let&apos;s map it out</p><p className="mt-2 text-sm text-slate-500">Tell us what you&apos;re preparing for.</p></div>
+          <div className="mb-8"><p className="text-2xl font-black tracking-tight text-slate-950">Let&apos;s map it out</p><p className="mt-2 text-sm text-slate-500">Add the topics you need to learn, your exam date, and a realistic daily study limit.</p></div>
           <form onSubmit={(event) => { event.preventDefault(); if (canSubmit && !isLoading) onGenerate(); }}>
             <div className="mb-6">
               <div className="mb-2 flex items-center justify-between"><label className="field-label mb-0" htmlFor="syllabus">Syllabus or topics</label><span className="text-xs tabular-nums text-slate-400">{syllabusText.length} characters</span></div>
               <textarea id="syllabus" value={syllabusText} onChange={(event) => onSyllabusChange(event.target.value)} placeholder={"e.g. Biology: cell structure, genetics, ecology\nMathematics: calculus, probability, statistics"} aria-describedby="syllabus-help" className="input-field min-h-44 resize-y leading-7" />
-              <p id="syllabus-help" className="mt-2 text-xs text-slate-400">Paste subjects, chapters, or a full syllabus outline.</p>
+              <p id="syllabus-help" className="mt-2 text-xs text-slate-400">Paste subjects, chapters, or a full syllabus outline. One topic per line works best; include detail such as “cell structure” instead of only “Biology”.</p>
             </div>
             <div className="mb-6">
               <label className="field-label" htmlFor="exam-date">Exam target date</label>
@@ -581,12 +550,13 @@ function SetupLanding({
             </div>
             <div className="mb-7">
               <div className="mb-3 flex items-end justify-between"><label className="field-label mb-0" htmlFor="hours">Daily study hours</label><span className="text-2xl font-black tracking-tight text-violet-600">{dailyHours}<span className="ml-1 text-sm font-bold">hrs/day</span></span></div>
-              <div className="rounded-xl border bg-slate-50/70 px-4 py-3"><input id="hours" type="range" min="1" max="12" step="0.5" value={dailyHours} onChange={(event) => onHoursChange(Number(event.target.value))} aria-valuetext={`${dailyHours} hours per day`} className="w-full cursor-pointer accent-violet-600" /><div className="mt-2 flex justify-between text-[11px] font-semibold text-slate-400"><span>1 hour</span><span>12 hours</span></div></div>
+              <div className="rounded-xl border bg-slate-50/70 px-4 py-3"><input id="hours" type="range" min="1" max="12" step="0.5" value={dailyHours} onChange={(event) => onHoursChange(Number(event.target.value))} aria-valuetext={`${dailyHours} hours per day`} aria-describedby="hours-help" className="w-full cursor-pointer accent-violet-600" /><div className="mt-2 flex justify-between text-[11px] font-semibold text-slate-400"><span>1 hour</span><span>12 hours</span></div></div>
+              <p id="hours-help" className="mt-2 text-xs text-slate-400">The roadmap will target up to {dailyHours * 60} minutes of work per study day, including theory, exercises, and practice.</p>
             </div>
             {error && <div role="alert" aria-live="assertive" className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"><p className="font-semibold">{error}</p><p className="mt-1 text-xs text-rose-600">Check your details and try again. Your entries are still saved.</p><button type="button" onClick={onGenerate} disabled={isLoading || !canSubmit} className="mt-2 text-xs font-bold text-rose-700 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50">Retry generation</button></div>}
             <button type="submit" disabled={isLoading || !canSubmit} aria-busy={isLoading} className="primary-button w-full">{isLoading ? <><Loader2 className="animate-spin" size={18} /> Building your roadmap...</> : <>Generate Study Strategy <ArrowRight size={18} /> </>}</button>
             {isLoading && <div role="status" aria-live="polite" className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-xs font-semibold text-violet-700"><span className="size-1.5 animate-pulse rounded-full bg-violet-600" /> Organizing your topics around your available time...</div>}
-            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400"><Sparkles size={12} /> Your plan is ready in under a minute</p>
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400"><Sparkles size={12} /> After generation, you&apos;ll get a dated checklist you can save locally and adjust when life changes.</p>
           </form>
         </section>
       </div>
@@ -599,26 +569,32 @@ function DashboardView({
   stats,
   activeDay,
   expandedDays,
-  isRebalancing,
+  rebalancePreview,
+  canUndoRebalance,
   notice,
-  rebalancingError,
   examDate,
   onToggleDay,
   onToggleTopic,
   onRebalance,
+  onApplyRebalance,
+  onCancelRebalance,
+  onUndoRebalance,
   onNewStrategy,
 }: {
   roadmap: RoadmapDay[];
   stats: { total: number; completed: number; percentage: number; streak: number };
   activeDay?: RoadmapDay;
   expandedDays: number[];
-  isRebalancing: boolean;
+  rebalancePreview: ReturnType<typeof rebalanceRoadmap> | null;
+  canUndoRebalance: boolean;
   notice: string;
-  rebalancingError: string;
   examDate: string;
   onToggleDay: (day: number) => void;
   onToggleTopic: (day: number, id: string) => void;
   onRebalance: () => void;
+  onApplyRebalance: () => void;
+  onCancelRebalance: () => void;
+  onUndoRebalance: () => void;
   onNewStrategy: () => void;
 }) {
   const daysUntilExam = getDaysUntil(examDate);
@@ -642,7 +618,7 @@ function DashboardView({
           <button onClick={onNewStrategy} className="secondary-button"><Sparkles size={16} /> New strategy</button>
         </div>
       </nav>
-      <div id="overview" className="print-hidden mb-9 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="eyebrow">Dashboard</p><h2 className="mt-2 text-3xl font-black tracking-[-0.03em] sm:text-4xl">Keep the momentum.</h2><p className="mt-2 text-sm text-slate-500">One focused session at a time.</p></div>{examDate && <p className="text-sm font-semibold text-slate-500">Exam target: <span className="text-slate-900">{formatDate(examDate)}</span></p>}</div>
+      <div id="overview" className="print-hidden mb-9 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="eyebrow">Dashboard</p><h2 className="mt-2 text-3xl font-black tracking-[-0.03em] sm:text-4xl">Keep the momentum.</h2><p className="mt-2 text-sm text-slate-500">One focused session at a time. Progress is saved in this browser, not synced to an account.</p></div>{examDate && <p className="text-sm font-semibold text-slate-500">Exam target: <span className="text-slate-900">{formatDate(examDate)}</span></p>}</div>
       <div className="print-hidden"><AnalyticsSummary stats={stats} /></div>
       <div className="print-hidden grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard icon={<Target size={18} />} label="Exam countdown" value={daysUntilExam === null ? "—" : daysUntilExam >= 0 ? `${daysUntilExam} days` : "Past due"} detail={examDate ? formatDate(examDate) : "Target not saved"} color="indigo" />
@@ -654,7 +630,47 @@ function DashboardView({
       <div id="progress" className="print-hidden surface-card mt-5 p-5"><div className="mb-3 flex justify-between text-sm font-bold"><span>Overall completion</span><span className="text-violet-600">{stats.percentage}%</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="progress-fill h-full rounded-full bg-gradient-to-r from-violet-600 to-indigo-500 transition-all duration-500" style={{ width: `${stats.percentage}%` }} /></div></div>
       <div id="roadmap" className="printable-roadmap mt-10 grid gap-8 xl:grid-cols-[1fr_300px]">
         <section><div className="mb-4 flex items-center justify-between"><div><h3 className="text-xl font-bold tracking-tight">Daily checklist</h3><p className="mt-1 text-sm text-slate-500">{roadmap.length} planned study days</p></div><CalendarDays className="text-slate-400" size={20} aria-label="Calendar" /></div>{roadmap.length === 0 ? <EmptyRoadmap onNewStrategy={onNewStrategy} /> : <div className="space-y-3">{roadmap.map((day) => <DayAccordion key={day.day} day={day} expanded={expandedDays.includes(day.day)} isToday={day.date === today} onToggle={() => onToggleDay(day.day)} onTopicToggle={onToggleTopic} />)}</div>}</section>
-        <aside className="print-hidden space-y-4"><FocusTimer /><div className="overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-600 to-indigo-600 p-5 text-white shadow-xl shadow-violet-200"><div className="mb-7 flex items-start justify-between"><div><p className="text-sm font-semibold text-violet-100">Today&apos;s focus</p><p className="mt-1 text-2xl font-black">{todayDay ? `Day ${todayDay.day}` : activeDay ? `Day ${activeDay.day}` : "Ready"}</p></div><div className="rounded-xl bg-white/15 p-2.5"><Target size={20} /></div></div><p className="text-sm text-violet-100">{todayDay ? formatDate(todayDay.date) : "No schedule for today"}</p><div className="mt-4 flex items-center gap-2 text-sm font-semibold"><Clock3 size={15} /> {formatMinutes(plannedMinutes)} planned</div></div><div className="surface-card p-5"><div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><RefreshCw size={18} /></div><h3 className="font-bold">Fell behind?</h3><p className="mt-1 text-sm leading-6 text-slate-500">Redistribute unfinished topics while preserving completed work and your exam date.</p><button onClick={onRebalance} disabled={isRebalancing || roadmap.length === 0} className="secondary-button mt-4 w-full justify-center text-xs">{isRebalancing ? <><Loader2 className="animate-spin" size={15} /> Rebalancing...</> : <><RefreshCw size={15} /> I&apos;m Behind — Rebalance My Plan</>}</button>{notice && <p role="status" className="mt-3 text-xs font-semibold text-emerald-600">{notice}</p>}{rebalancingError && <p role="alert" className="mt-3 text-xs font-semibold text-rose-600">{rebalancingError}</p>}</div></aside>
+        <aside className="print-hidden space-y-4"><FocusTimer /><div className="overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-600 to-indigo-600 p-5 text-white shadow-xl shadow-violet-200"><div className="mb-7 flex items-start justify-between"><div><p className="text-sm font-semibold text-violet-100">Today&apos;s focus</p><p className="mt-1 text-2xl font-black">{todayDay ? `Day ${todayDay.day}` : activeDay ? `Day ${activeDay.day}` : "Ready"}</p></div><div className="rounded-xl bg-white/15 p-2.5"><Target size={20} /></div></div><p className="text-sm text-violet-100">{todayDay ? formatDate(todayDay.date) : "No schedule for today"}</p><div className="mt-4 flex items-center gap-2 text-sm font-semibold"><Clock3 size={15} /> {formatMinutes(plannedMinutes)} planned</div></div><div className="surface-card p-5"><div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><RefreshCw size={18} /></div><h3 className="font-bold">Fell behind?</h3><p className="mt-1 text-sm leading-6 text-slate-500">Preview unfinished topics across the remaining days without changing your exam date.</p><button onClick={onRebalance} disabled={Boolean(rebalancePreview) || roadmap.length === 0} className="secondary-button mt-4 w-full justify-center text-xs"><RefreshCw size={15} /> Preview a new schedule</button>{canUndoRebalance && <button onClick={onUndoRebalance} className="secondary-button mt-2 w-full justify-center text-xs"><RotateCcw size={15} /> Undo last rebalance</button>}{notice && <p role="status" className="mt-3 text-xs font-semibold text-emerald-600">{notice}</p>}{rebalancePreview && <RebalancePreview preview={rebalancePreview} onApply={onApplyRebalance} onCancel={onCancelRebalance} />}</div></aside>
+      </div>
+    </div>
+  );
+}
+
+function RebalancePreview({
+  preview,
+  onApply,
+  onCancel,
+}: {
+  preview: ReturnType<typeof rebalanceRoadmap>;
+  onApply: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className={`mt-4 rounded-xl border p-4 text-sm ${preview.isFeasible ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`} role="status">
+      <p className="font-bold">{preview.isFeasible ? "Schedule preview" : "This plan cannot fit before the exam"}</p>
+      <p className="mt-1 text-xs leading-5">
+        {preview.isFeasible
+          ? `${preview.movedTaskIds.length} unfinished tasks will use ${preview.availableMinutes} available minutes.`
+          : `${preview.overflowTasks.length} unfinished ${preview.overflowTasks.length === 1 ? "task remains" : "tasks remain"} after using ${preview.availableMinutes} available minutes.`}
+      </p>
+      {!preview.isFeasible && (
+        <>
+          <p className="mt-2 text-xs font-semibold">
+            Nothing was changed. Reduce the workload, add time, or adjust the exam date.
+          </p>
+          <p className="mt-2 text-xs">
+            Still uncovered: {preview.overflowTasks.slice(0, 3).map((task) => task.title).join(", ")}
+            {preview.overflowTasks.length > 3 ? ` and ${preview.overflowTasks.length - 3} more` : ""}
+          </p>
+        </>
+      )}
+      <div className="mt-3 flex gap-2">
+        <button type="button" onClick={onApply} disabled={!preview.isFeasible} className="primary-button h-9 flex-1 px-3 text-xs">
+          Apply schedule
+        </button>
+        <button type="button" onClick={onCancel} className="secondary-button h-9 px-3 text-xs">
+          Cancel
+        </button>
       </div>
     </div>
   );

@@ -5,7 +5,7 @@ import Groq, {
 } from "groq-sdk";
 import { NextResponse } from "next/server";
 
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = "openai/gpt-oss-120b";
 const PROVIDER_TIMEOUT_MS = 20_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

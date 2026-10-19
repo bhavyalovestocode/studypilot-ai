@@ -7,11 +7,13 @@ vi.mock("groq-sdk", async () => {
 });
 
 const mockedGroq = vi.mocked(Groq);
+const testToday = new Date().toISOString().slice(0, 10);
+const testExamDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const validRoadmap = {
   roadmap: [
     {
       day: 1,
-      date: "2026-10-09",
+      date: testToday,
       theoryTopics: [
         {
           id: "algebra-theory-1",
@@ -76,7 +78,7 @@ describe("POST /api/generate-roadmap", () => {
     delete process.env.GROQ_API_KEY;
     const { POST } = await import("./route");
 
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "GROQ_API_KEY is not configured." });
@@ -94,7 +96,7 @@ describe("POST /api/generate-roadmap", () => {
     mockCompletion(JSON.stringify(validRoadmap));
     const { POST } = await import("./route");
 
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(validRoadmap);
@@ -110,7 +112,17 @@ ${JSON.stringify(validRoadmap)}
 \`\`\``);
     const { POST } = await import("./route");
 
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(validRoadmap);
+  });
+
+  it("normalizes the provider's numeric-key JSON object shape", async () => {
+    mockCompletion(JSON.stringify({ 0: validRoadmap.roadmap[0] }));
+    const { POST } = await import("./route");
+
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(validRoadmap);
@@ -118,14 +130,14 @@ ${JSON.stringify(validRoadmap)}
 
   it("rejects a roadmap day without all structured study blocks", async () => {
     mockCompletion(JSON.stringify({
-      roadmap: [{ day: 1, date: "2026-10-09", theoryTopics: validRoadmap.roadmap[0].theoryTopics, exercises: [], practiceQuestions: validRoadmap.roadmap[0].practiceQuestions }],
+      roadmap: [{ day: 1, date: testToday, theoryTopics: validRoadmap.roadmap[0].theoryTopics, exercises: [], practiceQuestions: validRoadmap.roadmap[0].practiceQuestions }],
     }));
     const { POST } = await import("./route");
 
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "Groq returned JSON that does not match the roadmap schema." });
+    expect(await response.json()).toEqual({ error: "Groq returned a roadmap that does not fit the requested dates or daily capacity." });
   });
 
   it("returns a safe error when the provider fails", async () => {
@@ -143,7 +155,7 @@ ${JSON.stringify(validRoadmap)}
     );
     const { POST } = await import("./route");
 
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({
@@ -151,11 +163,34 @@ ${JSON.stringify(validRoadmap)}
     });
   });
 
+  it("identifies unauthorized provider credentials without exposing them", async () => {
+    mockedGroq.mockImplementation(
+      () =>
+        ({
+          chat: {
+            completions: {
+              create: vi.fn().mockRejectedValue(
+                new APIError(401, { message: "unauthorized secret detail" }, "unauthorized", new Headers()),
+              ),
+            },
+          },
+        }) as unknown as Groq,
+    );
+    const { POST } = await import("./route");
+
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: "The AI service credentials are invalid or unauthorized. Check GROQ_API_KEY.",
+    });
+  });
+
   it("rejects malformed AI output", async () => {
     mockCompletion("not valid JSON");
     const { POST } = await import("./route");
 
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: "2026-10-20", dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "Groq returned invalid JSON." });

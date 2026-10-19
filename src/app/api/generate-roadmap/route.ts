@@ -5,7 +5,7 @@ import Groq, {
 } from "groq-sdk";
 import { NextResponse } from "next/server";
 
-const MODEL = "openai/gpt-oss-20b";
+const MODEL = "openai/gpt-oss-120b";
 const MIN_DAILY_HOURS = 1;
 const MAX_DAILY_HOURS = 12;
 const PROVIDER_TIMEOUT_MS = 30_000;
@@ -71,6 +71,39 @@ function isRoadmapResponse(value: unknown): value is RoadmapResponse {
   });
 }
 
+function isScheduledRoadmap(
+  value: RoadmapResponse,
+  todayString: string,
+  examDayString: string,
+  dailyHours: number,
+) {
+  const today = new Date(`${todayString}T00:00:00Z`);
+  const examDay = new Date(`${examDayString}T00:00:00Z`);
+  const expectedDays = Math.max(
+    0,
+    Math.ceil((examDay.getTime() - today.getTime()) / MILLISECONDS_PER_DAY),
+  );
+  if (value.roadmap.length !== expectedDays) return false;
+
+  const ids = new Set<string>();
+  return value.roadmap.every((day, index) => {
+    const expectedDate = new Date(today);
+    expectedDate.setUTCDate(expectedDate.getUTCDate() + index);
+    const expectedDateString = expectedDate.toISOString().slice(0, 10);
+    if (day.day !== index + 1 || day.date !== expectedDateString) return false;
+
+    const tasks = [day.theoryTopics, day.exercises, day.practiceQuestions].flat();
+    const totalMinutes = tasks.reduce((total, task) => total + task.estimatedMinutes, 0);
+    if (totalMinutes > dailyHours * 60) return false;
+
+    return tasks.every((task) => {
+      if (ids.has(task.id)) return false;
+      ids.add(task.id);
+      return true;
+    });
+  });
+}
+
 function getUtcDate(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
@@ -87,6 +120,21 @@ function sanitizeJsonResponse(content: string): string {
   }
 
   return withoutCodeBlock;
+}
+
+function coerceRoadmapResponse(value: unknown): unknown {
+  if (isRoadmapResponse(value) || !isRecord(value)) return value;
+
+  const keys = Object.keys(value).sort((left, right) => Number(left) - Number(right));
+  if (
+    keys.length === 0 ||
+    keys.some((key, index) => key !== String(index)) ||
+    keys.some((key) => !isRecord(value[key]))
+  ) {
+    return value;
+  }
+
+  return { roadmap: keys.map((key) => value[key]) };
 }
 
 export async function POST(request: Request) {
@@ -157,11 +205,17 @@ export async function POST(request: Request) {
   });
   const todayString = today.toISOString().slice(0, 10);
   const examDayString = examDay.toISOString().slice(0, 10);
+  const studyDates = Array.from({ length: daysRemaining }, (_, index) => {
+    const date = new Date(today);
+    date.setUTCDate(date.getUTCDate() + index);
+    return date.toISOString().slice(0, 10);
+  });
   const systemPrompt = `
 You are an elite AI academic strategist and curriculum planner for "StudyPilot AI". Your job is to generate a rigorous, realistic, and perfectly paced day-by-day study roadmap that balances theory learning, chapter exercises, and active practice questions.
 
 CRITICAL SCHEDULING & PEDAGOGY RULES:
 1. DATE RANGE SPREAD: Calculate the exact number of days available between today and the target exam date. You MUST distribute the curriculum smoothly across ALL available days. Never pack all topics into the first few days.
+   The roadmap MUST contain exactly ${daysRemaining} entries. Use every date in this exact order: ${studyDates.join(", ") || "(none)"}.
 2. INTEGRATED EXERCISES & PRACTICE: Do not separate theory and practice into isolated blocks at the very end. Every study day must structurally integrate:
    - Core Topic Review / Reading
    - Chapter Exercises (applying concepts learned)
@@ -225,7 +279,7 @@ Return STRICT JSON with exactly this shape:
   ]
 }
 
-Create one roadmap entry for each study day from today through the day before the exam. Every study day MUST have at least one item in each of "theoryTopics", "exercises", and "practiceQuestions"; never replace these arrays with a generic "topics" array. Each item must be a concrete, actionable task, not just a subject label. Distribute the syllabus across all available days. Use at most ${dailyHours * 60} total estimated minutes across all three arrays per day, and allocate time to theory, exercises, and practice realistically. Set every completed value to false. Use unique IDs across the entire roadmap. If there are no study days, return {"roadmap":[]}.
+Create exactly ${daysRemaining} roadmap entries. The "roadmap" array length must be exactly ${daysRemaining}; do not stop early or combine dates. Use the exact date list above, in order, with day values 1 through ${daysRemaining}. Every study day MUST have at least one item in each of "theoryTopics", "exercises", and "practiceQuestions"; never replace these arrays with a generic "topics" array. Each item must be a concrete, actionable task, not just a subject label. Distribute the syllabus across all available days. Use at most ${dailyHours * 60} total estimated minutes across all three arrays per day, and allocate time to theory, exercises, and practice realistically. Set every completed value to false. Use unique IDs across the entire roadmap. If there are no study days, return {"roadmap":[]}.
 
 Syllabus:
 ${syllabusText.trim()}`,
@@ -240,14 +294,17 @@ ${syllabusText.trim()}`,
 
     let parsedResponse: unknown;
     try {
-      parsedResponse = JSON.parse(sanitizeJsonResponse(content));
+      parsedResponse = coerceRoadmapResponse(JSON.parse(sanitizeJsonResponse(content)));
     } catch {
       return NextResponse.json({ error: "Groq returned invalid JSON." }, { status: 502 });
     }
 
-    if (!isRoadmapResponse(parsedResponse)) {
+    if (
+      !isRoadmapResponse(parsedResponse) ||
+      !isScheduledRoadmap(parsedResponse, todayString, examDayString, dailyHours)
+    ) {
       return NextResponse.json(
-        { error: "Groq returned JSON that does not match the roadmap schema." },
+        { error: "Groq returned a roadmap that does not fit the requested dates or daily capacity." },
         { status: 502 },
       );
     }
@@ -275,7 +332,19 @@ ${syllabusText.trim()}`,
     }
 
     if (error instanceof APIError) {
-      console.error("Groq rejected the roadmap request.", { status: error.status });
+      if (error.status === 401 || error.status === 403) {
+        console.error("Groq rejected the roadmap request because the configured credentials are unauthorized.", {
+          status: error.status,
+        });
+        return NextResponse.json(
+          { error: "The AI service credentials are invalid or unauthorized. Check GROQ_API_KEY." },
+          { status: 502 },
+        );
+      }
+      console.error("Groq rejected the roadmap request.", {
+        status: error.status ?? "unknown",
+        message: error.message.slice(0, 200),
+      });
       return NextResponse.json(
         { error: "The AI service could not generate a roadmap right now." },
         { status: 502 },
