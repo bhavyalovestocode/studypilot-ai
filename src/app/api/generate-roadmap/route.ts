@@ -10,6 +10,7 @@ const MIN_DAILY_HOURS = 1;
 const MAX_DAILY_HOURS = 12;
 const PROVIDER_TIMEOUT_MS = 30_000;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const ROADMAP_FAILURE_STATUS = 502;
 
 interface RoadmapTask {
   id: string;
@@ -71,36 +72,157 @@ function isRoadmapResponse(value: unknown): value is RoadmapResponse {
   });
 }
 
-function isScheduledRoadmap(
-  value: RoadmapResponse,
+type RoadmapValidationFailure = {
+  stage: "structure" | "schedule";
+  code: string;
+  message: string;
+};
+
+function describeRoadmapValidation(
+  value: unknown,
   todayString: string,
   examDayString: string,
   dailyHours: number,
-) {
-  const today = new Date(`${todayString}T00:00:00Z`);
-  const examDay = new Date(`${examDayString}T00:00:00Z`);
+): RoadmapValidationFailure[] {
+  const failures: RoadmapValidationFailure[] = [];
+  if (!isRecord(value) || !Array.isArray(value.roadmap)) {
+    return [
+      {
+        stage: "structure",
+        code: "missing-roadmap-array",
+        message: 'The response must be an object containing a "roadmap" array.',
+      },
+    ];
+  }
+
+  value.roadmap.forEach((day, dayIndex) => {
+    if (!isRecord(day)) {
+      failures.push({
+        stage: "structure",
+        code: "invalid-day",
+        message: `Roadmap entry ${dayIndex + 1} is not an object.`,
+      });
+      return;
+    }
+
+    if (
+      typeof day.day !== "number" ||
+      !Number.isInteger(day.day) ||
+      typeof day.date !== "string" ||
+      !Array.isArray(day.theoryTopics) ||
+      !Array.isArray(day.exercises) ||
+      !Array.isArray(day.practiceQuestions)
+    ) {
+      failures.push({
+        stage: "structure",
+        code: "invalid-day-shape",
+        message: `Roadmap entry ${dayIndex + 1} must include integer day, date, and all three task arrays.`,
+      });
+      return;
+    }
+
+    (["theoryTopics", "exercises", "practiceQuestions"] as const).forEach((group) => {
+      const tasks: unknown[] = Array.isArray(day[group]) ? day[group] : [];
+      if (tasks.length === 0) {
+        failures.push({
+          stage: "structure",
+          code: "empty-task-group",
+          message: `Day ${dayIndex + 1} has no ${group} tasks.`,
+        });
+      }
+
+      tasks.forEach((task, taskIndex) => {
+        if (
+          !isRecord(task) ||
+          typeof task.id !== "string" ||
+          typeof task.title !== "string" ||
+          typeof task.subject !== "string" ||
+          typeof task.estimatedMinutes !== "number" ||
+          !Number.isFinite(task.estimatedMinutes) ||
+          task.estimatedMinutes <= 0 ||
+          typeof task.completed !== "boolean"
+        ) {
+          failures.push({
+            stage: "structure",
+            code: "invalid-task",
+            message: `Day ${dayIndex + 1} ${group} task ${taskIndex + 1} has an invalid shape or estimatedMinutes value.`,
+          });
+        }
+      });
+    });
+  });
+
   const expectedDays = Math.max(
     0,
-    Math.ceil((examDay.getTime() - today.getTime()) / MILLISECONDS_PER_DAY),
+    Math.ceil(
+      (new Date(`${examDayString}T00:00:00Z`).getTime() -
+        new Date(`${todayString}T00:00:00Z`).getTime()) /
+        MILLISECONDS_PER_DAY,
+    ),
   );
-  if (value.roadmap.length !== expectedDays) return false;
+  if (value.roadmap.length !== expectedDays) {
+    failures.push({
+      stage: "schedule",
+      code: "wrong-day-count",
+      message: `Expected exactly ${expectedDays} study days, but Groq returned ${value.roadmap.length}.`,
+    });
+  }
 
   const ids = new Set<string>();
-  return value.roadmap.every((day, index) => {
-    const expectedDate = new Date(today);
+  value.roadmap.forEach((day, index) => {
+    if (!isRecord(day)) return;
+    const expectedDate = new Date(`${todayString}T00:00:00Z`);
     expectedDate.setUTCDate(expectedDate.getUTCDate() + index);
     const expectedDateString = expectedDate.toISOString().slice(0, 10);
-    if (day.day !== index + 1 || day.date !== expectedDateString) return false;
+    if (day.day !== index + 1 || day.date !== expectedDateString) {
+      failures.push({
+        stage: "schedule",
+        code: "invalid-date-sequence",
+        message: `Day ${index + 1} must use day ${index + 1} and date ${expectedDateString}; received day ${String(day.day)} and date ${String(day.date)}.`,
+      });
+    }
 
-    const tasks = [day.theoryTopics, day.exercises, day.practiceQuestions].flat();
-    const totalMinutes = tasks.reduce((total, task) => total + task.estimatedMinutes, 0);
-    if (totalMinutes > dailyHours * 60) return false;
-
-    return tasks.every((task) => {
-      if (ids.has(task.id)) return false;
+    const tasks = (["theoryTopics", "exercises", "practiceQuestions"] as const).flatMap((group) =>
+      Array.isArray(day[group]) ? day[group] : [],
+    );
+    const totalMinutes = tasks.reduce(
+      (total, task) =>
+        isRecord(task) && typeof task.estimatedMinutes === "number"
+          ? total + task.estimatedMinutes
+          : total,
+      0,
+    );
+    if (totalMinutes > dailyHours * 60) {
+      failures.push({
+        stage: "schedule",
+        code: "daily-capacity-exceeded",
+        message: `Day ${index + 1} contains ${totalMinutes} minutes, exceeding the ${dailyHours * 60}-minute daily capacity.`,
+      });
+    }
+    tasks.forEach((task) => {
+      if (!isRecord(task) || typeof task.id !== "string") return;
+      if (ids.has(task.id)) {
+        failures.push({
+          stage: "schedule",
+          code: "duplicate-task-id",
+          message: `Task ID "${task.id}" is used more than once.`,
+        });
+      }
       ids.add(task.id);
-      return true;
     });
+  });
+
+  return failures;
+}
+
+function logRoadmapFailure(
+  stage: string,
+  failures: RoadmapValidationFailure[],
+  metadata: Record<string, unknown>,
+) {
+  console.error(`Roadmap generation failed during ${stage}.`, {
+    ...metadata,
+    failures: failures.map(({ code, message }) => ({ code, message })),
   });
 }
 
@@ -143,10 +265,12 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
+    console.error("Roadmap request validation failed: request body was not valid JSON.");
     return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
 
   if (!isRecord(body)) {
+    console.error("Roadmap request validation failed: body was not a JSON object.");
     return NextResponse.json({ error: "Request body must be a JSON object." }, { status: 400 });
   }
 
@@ -162,6 +286,11 @@ export async function POST(request: Request) {
     dailyHours < MIN_DAILY_HOURS ||
     dailyHours > MAX_DAILY_HOURS
   ) {
+    console.error("Roadmap request validation failed: invalid input fields.", {
+      hasSyllabusText: typeof syllabusText === "string" && syllabusText.trim().length > 0,
+      examDateType: typeof examDate,
+      dailyHours,
+    });
     return NextResponse.json(
       {
         error:
@@ -172,6 +301,7 @@ export async function POST(request: Request) {
   }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(examDate)) {
+    console.error("Roadmap request validation failed: examDate has the wrong format.");
     return NextResponse.json({ error: "examDate must use the YYYY-MM-DD format." }, { status: 400 });
   }
 
@@ -180,6 +310,9 @@ export async function POST(request: Request) {
     Number.isNaN(parsedExamDate.getTime()) ||
     parsedExamDate.toISOString().slice(0, 10) !== examDate
   ) {
+    console.error("Roadmap request validation failed: examDate is not a valid calendar date.", {
+      examDate,
+    });
     return NextResponse.json({ error: "examDate must be a valid date." }, { status: 400 });
   }
 
@@ -190,6 +323,10 @@ export async function POST(request: Request) {
   );
 
   if (daysRemaining < 0) {
+    console.error("Roadmap request validation failed: examDate is in the past.", {
+      today: today.toISOString().slice(0, 10),
+      examDate,
+    });
     return NextResponse.json({ error: "examDate must be today or in the future." }, { status: 400 });
   }
 
@@ -221,12 +358,18 @@ CRITICAL SCHEDULING & PEDAGOGY RULES:
    - Chapter Exercises (applying concepts learned)
    - Active Practice Questions / Problem-Solving blocks
    Every study day must contain at least one concrete task in each of the three JSON arrays: "theoryTopics", "exercises", and "practiceQuestions". A day containing only topic titles is invalid.
-3. DAILY HOUR BUDGET: The user has specified a maximum of ${dailyHours} hours per day. Allocate time slots realistically (e.g., 60% theory/exercises, 40% active practice) so daily hours match this budget without overloading or underutilizing time.
+3. DAILY HOUR BUDGET: The user has specified a maximum of ${dailyHours} hours per day. Allocate realistic time slots (e.g., 60% theory/exercises, 40% active practice), but never exceed the daily limit. Using less time is valid when the syllabus does not require the full budget.
 4. PACING & AVOIDANCE OF EARLY FINISHES: Never finish the entire syllabus in 1-2 days and mark the rest as "rest". Keep a steady, sustainable daily cognitive load right up until the exam date.
 5. JSON FORMAT: Return strictly valid JSON matching the requested schema. No conversational intro or outro text. Never use a generic "topics" field.
 `;
 
   try {
+    console.info("Requesting roadmap from Groq.", {
+      model: MODEL,
+      requestedDays: daysRemaining,
+      dailyHours,
+      responseFormat: "json_object",
+    });
     const completion = await groq.chat.completions.create({
       model: MODEL,
       temperature: 0.2,
@@ -289,23 +432,55 @@ ${syllabusText.trim()}`,
 
     const content = completion.choices[0]?.message?.content;
     if (typeof content !== "string") {
+      logRoadmapFailure("response extraction", [
+        { stage: "structure", code: "empty-provider-response", message: "Groq returned no text content." },
+      ], { model: MODEL, requestedDays: daysRemaining });
       return NextResponse.json({ error: "Groq returned an empty response." }, { status: 502 });
     }
 
     let parsedResponse: unknown;
     try {
-      parsedResponse = coerceRoadmapResponse(JSON.parse(sanitizeJsonResponse(content)));
-    } catch {
-      return NextResponse.json({ error: "Groq returned invalid JSON." }, { status: 502 });
+      const sanitizedContent = sanitizeJsonResponse(content);
+      const decodedResponse = JSON.parse(sanitizedContent);
+      parsedResponse = coerceRoadmapResponse(decodedResponse);
+      if (parsedResponse !== decodedResponse) {
+        console.info("Normalized numeric-key roadmap response from Groq.", {
+          model: MODEL,
+          requestedDays: daysRemaining,
+          originalKeys: isRecord(decodedResponse) ? Object.keys(decodedResponse).slice(0, 20) : [],
+        });
+      }
+    } catch (error) {
+      logRoadmapFailure("JSON parsing", [
+        { stage: "structure", code: "invalid-json", message: error instanceof Error ? error.message : "JSON.parse failed." },
+      ], { model: MODEL, requestedDays: daysRemaining, responseLength: content.length });
+      return NextResponse.json({ error: "Groq returned invalid JSON. Ask it to return the requested roadmap JSON without additional text." }, { status: ROADMAP_FAILURE_STATUS });
     }
 
-    if (
-      !isRoadmapResponse(parsedResponse) ||
-      !isScheduledRoadmap(parsedResponse, todayString, examDayString, dailyHours)
-    ) {
+    const validationFailures = describeRoadmapValidation(
+      parsedResponse,
+      todayString,
+      examDayString,
+      dailyHours,
+    );
+    if (validationFailures.length > 0) {
+      const validationStage = validationFailures.some(({ stage }) => stage === "schedule")
+        ? "semantic roadmap validation"
+        : "roadmap structure validation";
+      logRoadmapFailure(validationStage, validationFailures, {
+        model: MODEL,
+        requestedDays: daysRemaining,
+        actualDays: isRecord(parsedResponse) && Array.isArray(parsedResponse.roadmap)
+          ? parsedResponse.roadmap.length
+          : null,
+        responseShape: isRecord(parsedResponse) ? Object.keys(parsedResponse).slice(0, 20) : typeof parsedResponse,
+      });
       return NextResponse.json(
-        { error: "Groq returned a roadmap that does not fit the requested dates or daily capacity." },
-        { status: 502 },
+        {
+          error: `Groq returned an invalid roadmap: ${validationFailures[0].message}`,
+          details: validationFailures.map(({ code, message }) => ({ code, message })),
+        },
+        { status: ROADMAP_FAILURE_STATUS },
       );
     }
 
@@ -332,6 +507,19 @@ ${syllabusText.trim()}`,
     }
 
     if (error instanceof APIError) {
+      const modelUnavailable =
+        error.status === 404 || /model.{0,30}(not found|unsupported|available)/i.test(error.message);
+      if (modelUnavailable) {
+        console.error("Configured Groq roadmap model is unavailable.", {
+          model: MODEL,
+          status: error.status ?? "unknown",
+          message: error.message.slice(0, 200),
+        });
+        return NextResponse.json(
+          { error: `The configured Groq model "${MODEL}" is unavailable for this account. Check the model configuration.` },
+          { status: ROADMAP_FAILURE_STATUS },
+        );
+      }
       if (error.status === 401 || error.status === 403) {
         console.error("Groq rejected the roadmap request because the configured credentials are unauthorized.", {
           status: error.status,

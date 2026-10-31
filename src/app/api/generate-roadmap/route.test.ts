@@ -137,7 +137,49 @@ ${JSON.stringify(validRoadmap)}
     const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "Groq returned a roadmap that does not fit the requested dates or daily capacity." });
+    expect(await response.json()).toEqual({
+      error: "Groq returned an invalid roadmap: Day 1 has no exercises tasks.",
+      details: [
+        { code: "empty-task-group", message: "Day 1 has no exercises tasks." },
+      ],
+    });
+  });
+
+  it("reports an under-produced roadmap instead of hiding the day-count failure", async () => {
+    mockCompletion(JSON.stringify({ roadmap: [] }));
+    const { POST } = await import("./route");
+
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: "Groq returned an invalid roadmap: Expected exactly 1 study days, but Groq returned 0.",
+      details: [
+        { code: "wrong-day-count", message: "Expected exactly 1 study days, but Groq returned 0." },
+      ],
+    });
+  });
+
+  it("reports duplicate IDs and daily capacity violations", async () => {
+    const invalidDay = JSON.parse(JSON.stringify(validRoadmap.roadmap[0]));
+    invalidDay.theoryTopics[0].estimatedMinutes = 121;
+    invalidDay.exercises[0].id = invalidDay.theoryTopics[0].id;
+    mockCompletion(JSON.stringify({ roadmap: [invalidDay] }));
+    const { POST } = await import("./route");
+
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: "Groq returned an invalid roadmap: Day 1 contains 181 minutes, exceeding the 180-minute daily capacity.",
+      details: [
+        {
+          code: "daily-capacity-exceeded",
+          message: "Day 1 contains 181 minutes, exceeding the 180-minute daily capacity.",
+        },
+        { code: "duplicate-task-id", message: 'Task ID "algebra-theory-1" is used more than once.' },
+      ],
+    });
   });
 
   it("returns a safe error when the provider fails", async () => {
@@ -186,6 +228,29 @@ ${JSON.stringify(validRoadmap)}
     });
   });
 
+  it("identifies an unsupported or unavailable configured model", async () => {
+    mockedGroq.mockImplementation(
+      () =>
+        ({
+          chat: {
+            completions: {
+              create: vi.fn().mockRejectedValue(
+                new APIError(404, { message: "model not found" }, "model not found", new Headers()),
+              ),
+            },
+          },
+        }) as unknown as Groq,
+    );
+    const { POST } = await import("./route");
+
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: 'The configured Groq model "openai/gpt-oss-120b" is unavailable for this account. Check the model configuration.',
+    });
+  });
+
   it("rejects malformed AI output", async () => {
     mockCompletion("not valid JSON");
     const { POST } = await import("./route");
@@ -193,6 +258,8 @@ ${JSON.stringify(validRoadmap)}
     const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "Groq returned invalid JSON." });
+    expect(await response.json()).toEqual({
+      error: "Groq returned invalid JSON. Ask it to return the requested roadmap JSON without additional text.",
+    });
   });
 });
