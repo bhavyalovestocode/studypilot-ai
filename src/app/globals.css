@@ -4,20 +4,20 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --color-canvas: #f7f8fc;
-  --color-ink: #101124;
-  --color-muted: #687087;
+  --color-canvas: #f7f7f4;
+  --color-ink: #101116;
+  --color-muted: #69707d;
   --color-brand: #5b3df5;
   --color-brand-soft: #8b5cf6;
-  --color-line: #e5e7f0;
+  --color-line: #e5e5e1;
 }
 
 :root {
-  --background: #f7f8fc;
-  --foreground: #101124;
+  --background: #f7f7f4;
+  --foreground: #101116;
   --surface: #ffffff;
-  --line: #e5e7f0;
-  --muted: #687087;
+  --line: #e5e5e1;
+  --muted: #69707d;
   --brand: #5b3df5;
 }
 
@@ -66,6 +66,26 @@ label:has(input:focus-visible) {
 }
 
 @layer components {
+  .landing-nav-link {
+    @apply text-sm font-semibold text-slate-500 transition-colors hover:text-slate-950;
+  }
+
+  .landing-kicker {
+    @apply inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-violet-700;
+  }
+
+  .landing-button {
+    @apply inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold transition-all duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .landing-button-primary {
+    @apply bg-violet-600 text-white shadow-lg shadow-violet-200 hover:bg-violet-700 hover:shadow-xl hover:shadow-violet-200;
+  }
+
+  .landing-button-dark {
+    @apply bg-slate-950 text-white shadow-lg shadow-slate-300/30 hover:bg-violet-700;
+  }
+
   .nav-item {
     @apply flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-500 transition-all duration-200 hover:bg-violet-50 hover:text-violet-700;
   }
@@ -95,7 +115,7 @@ label:has(input:focus-visible) {
   }
 
   .surface-card {
-    @apply rounded-2xl border bg-white shadow-[0_12px_35px_rgb(16_17_36_/4%)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20;
+      @apply rounded-2xl border border-slate-200 bg-white shadow-[0_12px_35px_rgb(16_17_36_/4%)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20;
   }
 
   .eyebrow {
@@ -126,6 +146,26 @@ label:has(input:focus-visible) {
     animation: progress-fill 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
     transform-origin: left;
   }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.animation-delay-100 {
+  animation-delay: 100ms;
+}
+
+.animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+.animation-delay-300 {
+  animation-delay: 300ms;
+}
+
+.animate-fade-up {
+  animation: fade-up 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .dark .bg-canvas {
@@ -173,6 +213,17 @@ label:has(input:focus-visible) {
   }
   to {
     transform: scaleX(1);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

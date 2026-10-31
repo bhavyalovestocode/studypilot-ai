@@ -383,7 +383,7 @@ export default function Home() {
 
   if (view === "setup") {
     return (
-      <SetupLanding
+      <ChatOnboarding
         syllabusText={syllabusText}
         examDate={examDate}
         dailyHours={dailyHours}
@@ -399,7 +399,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-canvas text-ink">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r bg-white/95 px-5 py-7 shadow-[8px_0_30px_rgb(16_17_36_/2%)] backdrop-blur lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200/80 bg-[#f7f7f4]/95 px-5 py-7 shadow-[8px_0_30px_rgb(16_17_36_/3%)] backdrop-blur lg:flex dark:border-slate-800 dark:bg-slate-950/95">
         <Brand />
         <div className="mt-14 mb-3 px-3"><p className="eyebrow">Workspace</p></div>
         <nav className="space-y-2">
@@ -410,18 +410,18 @@ export default function Home() {
             <Sparkles size={18} /> New strategy
           </button>
         </nav>
-        <div className="mt-auto rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 p-4">
-          <div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-200">
+        <div className="mt-auto rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-lg shadow-slate-300/30 dark:bg-violet-600">
             <Target size={18} />
           </div>
-          <p className="text-sm font-semibold text-indigo-950">Small steps, big wins.</p>
-          <p className="mt-1 text-xs leading-5 text-indigo-700">Consistency compounds. You&apos;ve got this.</p>
+          <p className="text-sm font-semibold text-slate-950 dark:text-white">Small steps, big wins.</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">Consistency compounds. You&apos;ve got this.</p>
         </div>
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b bg-white/75 px-5 backdrop-blur-xl sm:px-8 lg:px-12">
-          <button ref={mobileNavTriggerRef} className="flex items-center gap-2 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation menu">
+        <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-slate-200/80 bg-[#f7f7f4]/85 px-5 backdrop-blur-xl sm:px-8 lg:px-12 dark:border-slate-800 dark:bg-slate-950/85">
+          <button ref={mobileNavTriggerRef} className="flex items-center gap-2 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation menu" aria-expanded={mobileNavOpen}>
             <Menu size={20} />
             <Brand />
           </button>
@@ -431,7 +431,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <div className="hidden items-center gap-2 rounded-full border bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm sm:flex">
+            <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm sm:flex dark:border-slate-800 dark:bg-slate-900">
               <span className="size-2 rounded-full bg-emerald-500" /> Focus mode on
             </div>
             <div className="flex size-9 items-center justify-center rounded-full bg-slate-950 text-xs font-bold text-white shadow-sm">SP</div>
@@ -461,7 +461,7 @@ export default function Home() {
 
       {mobileNavOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/30 lg:hidden" onClick={() => setMobileNavOpen(false)}>
-          <div className="h-full w-72 bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="mobile-navigation-title" onClick={(event) => event.stopPropagation()}>
+          <div className="h-full w-72 border-r border-slate-200 bg-[#f7f7f4] p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950" role="dialog" aria-modal="true" aria-labelledby="mobile-navigation-title" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between"><span id="mobile-navigation-title" className="sr-only">Mobile navigation</span><Brand /><button ref={mobileNavCloseRef} onClick={() => setMobileNavOpen(false)} aria-label="Close navigation menu"><X size={20} /></button></div>
             <nav className="mt-12 space-y-2">
               <button className="nav-item nav-item-active" onClick={() => { setView(roadmap.length ? "dashboard" : "setup"); setMobileNavOpen(false); }}><LayoutDashboard size={18} /> Overview</button>
@@ -475,7 +475,126 @@ export default function Home() {
 }
 
 function Brand() {
-  return <div className="flex items-center gap-2.5"><div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-200"><GraduationCap size={19} /></div><span className="text-base font-extrabold tracking-tight text-slate-950">StudyPilot<span className="text-violet-600"> AI</span></span></div>;
+  return <div className="flex items-center gap-2.5"><div className="flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-lg shadow-slate-300/40"><GraduationCap size={18} /></div><span className="text-base font-extrabold tracking-tight text-slate-950">StudyPilot<span className="text-violet-600"> AI</span></span></div>;
+}
+
+function ChatOnboarding({
+  syllabusText,
+  examDate,
+  dailyHours,
+  isLoading,
+  error,
+  onSyllabusChange,
+  onDateChange,
+  onHoursChange,
+  onGenerate,
+}: {
+  syllabusText: string;
+  examDate: string;
+  dailyHours: number;
+  isLoading: boolean;
+  error: string;
+  onSyllabusChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+  onHoursChange: (value: number) => void;
+  onGenerate: () => void;
+}) {
+  const [today, setToday] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setToday(new Date().toISOString().slice(0, 10)), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const dateError = today.length > 0 && examDate.length > 0 && examDate < today;
+  const canSubmit = syllabusText.trim().length > 0 && Boolean(examDate) && !dateError;
+
+  function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (canSubmit && !isLoading) onGenerate();
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-canvas text-slate-950">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-[#f7f7f4]/90 backdrop-blur-xl">
+        <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
+          <a href="#" aria-label="StudyPilot AI home"><Brand /></a>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs font-semibold text-slate-500 sm:inline">New study roadmap</span>
+            <ThemeToggle />
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto flex w-full max-w-3xl flex-col px-5 pb-28 pt-12 sm:px-8 sm:pt-16">
+        <div className="mb-12 text-center animate-fade-up">
+          <div className="landing-kicker justify-center"><span className="size-1.5 rounded-full bg-violet-600" /> Guided planning</div>
+          <h1 className="mt-5 text-4xl font-black leading-[1.02] tracking-[-0.06em] sm:text-6xl">Let&apos;s build a plan<br /><span className="text-violet-600">that fits your life.</span></h1>
+          <p className="mx-auto mt-5 max-w-lg text-sm leading-7 text-slate-500 sm:text-base">I&apos;ll ask for three things, then turn them into a structured roadmap with a clear next step for every study day.</p>
+        </div>
+
+        <section className="space-y-7" aria-label="Study plan conversation">
+          <div className="flex gap-3 animate-fade-up animation-delay-100">
+            <div className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white"><Sparkles size={15} /></div>
+            <div className="max-w-[35rem] rounded-2xl rounded-tl-md border border-slate-200 bg-white px-5 py-4 shadow-[0_8px_24px_rgb(15_23_42_/4%)]">
+              <p className="text-sm font-bold text-slate-950">What are you preparing for?</p>
+              <p className="mt-1.5 text-sm leading-6 text-slate-500">Share your syllabus, subjects, chapters, or a rough topic list. More detail helps me pace the plan well.</p>
+            </div>
+          </div>
+
+          <div className="ml-0 sm:ml-11 animate-fade-up animation-delay-200">
+            <form onSubmit={(event) => { event.preventDefault(); if (canSubmit && !isLoading) onGenerate(); }} className="space-y-5">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_12px_35px_rgb(16_17_36_/4%)] sm:p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <label className="field-label mb-0" htmlFor="syllabus">Your syllabus</label>
+                  <span className="text-xs tabular-nums text-slate-400">{syllabusText.length} characters</span>
+                </div>
+                <textarea
+                  id="syllabus"
+                  value={syllabusText}
+                  onChange={(event) => onSyllabusChange(event.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  placeholder={"e.g. Biology: cell structure, genetics, ecology\nMathematics: calculus, probability, statistics"}
+                  aria-describedby="syllabus-help"
+                  className="input-field min-h-32 resize-y border-0 bg-slate-50/70 px-4 py-4 leading-7 shadow-none focus:bg-white focus:ring-4 focus:ring-violet-500/10"
+                />
+                <p id="syllabus-help" className="mt-2 text-xs leading-5 text-slate-400">Press Enter to send when everything is ready. Shift + Enter adds a new line.</p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-[1fr_1fr]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgb(15_23_42_/3%)]">
+                  <label className="field-label" htmlFor="exam-date">When is your exam?</label>
+                  <div className="relative"><CalendarDays className="input-icon" size={17} /><input id="exam-date" type="date" min={today} value={examDate} onChange={(event) => onDateChange(event.target.value)} aria-invalid={dateError} aria-describedby={dateError ? "date-error" : undefined} className={`input-field pl-10 ${dateError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-500/10" : ""}`} /></div>
+                  {dateError && <p id="date-error" role="alert" className="mt-2 text-xs font-semibold text-rose-600">Choose today or a future date.</p>}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgb(15_23_42_/3%)]">
+                  <div className="mb-3 flex items-end justify-between"><label className="field-label mb-0" htmlFor="hours">Daily availability</label><span className="text-lg font-black tracking-tight text-violet-600">{dailyHours}<span className="ml-1 text-xs font-bold">hrs</span></span></div>
+                  <input id="hours" type="range" min="1" max="12" step="0.5" value={dailyHours} onChange={(event) => onHoursChange(Number(event.target.value))} aria-valuetext={`${dailyHours} hours per day`} aria-describedby="hours-help" className="mt-2 w-full cursor-pointer accent-violet-600" />
+                  <div className="mt-2 flex justify-between text-[11px] font-semibold text-slate-400"><span>1 hour</span><span>12 hours</span></div>
+                  <p id="hours-help" className="mt-2 text-xs leading-5 text-slate-400">Up to {dailyHours * 60} minutes per study day.</p>
+                </div>
+              </div>
+
+              {error && <div role="alert" aria-live="assertive" className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"><p className="font-semibold">{error}</p><p className="mt-1 text-xs text-rose-600">Your entries are still saved. Check the details and try again.</p><button type="button" onClick={onGenerate} disabled={isLoading || !canSubmit} className="mt-2 text-xs font-bold text-rose-700 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50">Retry generation</button></div>}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button type="submit" disabled={isLoading || !canSubmit} aria-busy={isLoading} className="landing-button landing-button-primary w-full sm:flex-1">{isLoading ? <><Loader2 className="animate-spin" size={17} /> Building your roadmap...</> : <>Create my roadmap <ArrowRight size={17} /></>}</button>
+                <span className="text-center text-xs text-slate-400 sm:max-w-[12rem] sm:text-left">No account needed. Your plan stays in this browser.</span>
+              </div>
+              {isLoading && <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 rounded-xl bg-violet-50 px-3 py-3 text-xs font-semibold text-violet-700"><span className="size-1.5 animate-pulse rounded-full bg-violet-600" /> Organizing your topics around your available time...</div>}
+            </form>
+          </div>
+
+          <div className="flex gap-3 border-t border-slate-200 pt-7 animate-fade-up animation-delay-300">
+            <div className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><Check size={15} /></div>
+            <div><p className="text-sm font-bold text-slate-950">What you&apos;ll get</p><p className="mt-1 text-sm leading-6 text-slate-500">A dated checklist split into theory, exercises, and active practice, validated against your time and exam date.</p></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 }
 
 function SetupLanding({
@@ -500,43 +619,80 @@ function SetupLanding({
   onGenerate: () => void;
 }) {
   const [today, setToday] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [navElevated, setNavElevated] = useState(false);
   useEffect(() => {
     const todayTimer = window.setTimeout(() => {
       setToday(new Date().toISOString().slice(0, 10));
     }, 0);
-    return () => window.clearTimeout(todayTimer);
+    const handleScroll = () => setNavElevated(window.scrollY > 12);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.clearTimeout(todayTimer);
+      window.removeEventListener("scroll", handleScroll);
+    };
   }, []);
 
   const dateError = today.length > 0 && examDate.length > 0 && examDate < today;
   const canSubmit = syllabusText.trim().length > 0 && Boolean(examDate) && !dateError;
+  const scrollToPlanner = () => {
+    setMobileMenuOpen(false);
+    document.getElementById("planner")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => document.getElementById("syllabus")?.focus(), 450);
+  };
 
   return (
-    <main className="page-enter relative min-h-screen overflow-hidden bg-canvas px-5 py-6 sm:px-8 lg:px-14">
-      <div className="pointer-events-none absolute -right-40 -top-52 size-[34rem] rounded-full bg-violet-200/25 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-64 -left-40 size-[28rem] rounded-full bg-indigo-100/30 blur-3xl" />
-      <header className="relative mx-auto flex max-w-7xl items-center justify-between">
-        <Brand />
-        <div className="flex items-center gap-4"><div className="hidden items-center gap-2 text-xs font-semibold text-slate-500 sm:flex"><span className="size-2 rounded-full bg-emerald-500" /> Built for focused progress</div><ThemeToggle /></div>
+    <main className="page-enter min-h-screen overflow-hidden bg-canvas text-slate-950">
+      <header className={`fixed inset-x-0 top-0 z-40 transition-all duration-300 ${navElevated ? "border-b border-slate-200/80 bg-[#f7f7f4]/90 shadow-[0_8px_30px_rgb(15_23_42_/5%)] backdrop-blur-xl" : "bg-transparent"}`}>
+        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-12">
+          <a href="#" aria-label="StudyPilot AI home"><Brand /></a>
+          <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">
+            <a className="landing-nav-link" href="#product">Product</a>
+            <a className="landing-nav-link" href="#features">Features</a>
+            <a className="landing-nav-link" href="#how-it-works">How it works</a>
+            <a className="landing-nav-link" href="#faq">FAQ</a>
+          </nav>
+          <div className="hidden items-center gap-3 md:flex"><ThemeToggle /><button type="button" onClick={scrollToPlanner} className="landing-button landing-button-dark">Build my study plan <ArrowRight size={15} /></button></div>
+          <div className="flex items-center gap-2 md:hidden"><ThemeToggle /><button type="button" onClick={() => setMobileMenuOpen((open) => !open)} className="flex size-10 items-center justify-center rounded-xl border border-slate-200 bg-white" aria-expanded={mobileMenuOpen} aria-label="Toggle navigation"><Menu size={19} /></button></div>
+        </div>
+        {mobileMenuOpen && <div className="border-t border-slate-200 bg-[#f7f7f4] px-5 py-5 md:hidden"><nav className="grid gap-1" aria-label="Mobile navigation">{[["Product", "#product"], ["Features", "#features"], ["How it works", "#how-it-works"], ["FAQ", "#faq"]].map(([label, href]) => <a key={href} href={href} onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-semibold text-slate-600 hover:bg-white hover:text-slate-950">{label}</a>)}<button type="button" onClick={scrollToPlanner} className="landing-button landing-button-dark mt-3 w-full">Build my study plan <ArrowRight size={15} /></button></nav></div>}
       </header>
-      <div className="relative mx-auto grid max-w-7xl items-center gap-14 py-16 lg:grid-cols-[1fr_0.86fr] lg:gap-24 lg:py-24">
-        <section>
-          <div className="page-enter stagger-1 mb-7 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-violet-700 shadow-sm"><Sparkles size={14} /> AI-powered study planning</div>
-          <h1 className="page-enter stagger-2 max-w-2xl text-5xl font-black leading-[0.98] tracking-[-0.065em] text-slate-950 sm:text-7xl">Your syllabus.<br />Your <span className="bg-gradient-to-r from-violet-600 to-indigo-500 bg-clip-text text-transparent">strategy.</span><br />Your success.</h1>
-          <p className="page-enter stagger-3 mt-8 max-w-xl text-base leading-8 text-slate-500 sm:text-lg">StudyPilot AI turns your syllabus into a realistic daily checklist, paced around your exam date and available time. Generate a plan, check off work, and preview a safer schedule when you fall behind.</p>
-          <div className="page-enter stagger-4 mt-9 grid max-w-xl gap-3 sm:grid-cols-3">
-            {[
-              ["Personalized roadmaps", "Built around your target"],
-              ["Adaptive scheduling", "Flexible when life happens"],
-              ["Progress tracking", "Momentum you can see"],
-            ].map(([title, detail]) => (
-              <div key={title} className="flex gap-2.5 text-sm"><span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={13} strokeWidth={3} /></span><span><span className="block font-bold text-slate-800">{title}</span><span className="mt-1 block text-xs leading-5 text-slate-400">{detail}</span></span></div>
-            ))}
-          </div>
-        </section>
 
-        <section className="page-enter stagger-4 surface-card relative p-6 sm:p-9">
-          <div className="absolute -right-3 -top-3 flex size-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-xl shadow-violet-200"><Target size={20} /></div>
-          <div className="mb-8"><p className="text-2xl font-black tracking-tight text-slate-950">Let&apos;s map it out</p><p className="mt-2 text-sm text-slate-500">Add the topics you need to learn, your exam date, and a realistic daily study limit.</p></div>
+      <section id="product" className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-32 sm:px-8 sm:pt-40 lg:grid-cols-[0.88fr_1.12fr] lg:gap-20 lg:px-12 lg:pb-28">
+        <div className="pointer-events-none absolute -right-56 -top-24 size-[34rem] rounded-full bg-violet-200/25 blur-3xl" />
+        <div className="relative">
+          <div className="landing-kicker animate-fade-up"><span className="size-1.5 rounded-full bg-violet-600" /> A calmer way to prepare</div>
+          <h1 className="animate-fade-up animation-delay-100 mt-7 max-w-2xl text-[clamp(3.35rem,7vw,6.8rem)] font-black leading-[0.91] tracking-[-0.075em] text-slate-950">Your syllabus.<br />Your schedule.<br /><span className="text-violet-600">Your next breakthrough.</span></h1>
+          <p className="animate-fade-up animation-delay-200 mt-8 max-w-lg text-base leading-7 text-slate-600 sm:text-lg sm:leading-8">Turn your syllabus, exam date, and available study hours into an intelligent study roadmap that adapts when life gets in the way.</p>
+          <div className="animate-fade-up animation-delay-300 mt-9 flex flex-col items-start gap-4 sm:flex-row sm:items-center"><button type="button" onClick={scrollToPlanner} className="landing-button landing-button-primary">Build my study plan <ArrowRight size={16} /></button><a href="#how-it-works" className="inline-flex items-center gap-2 px-1 text-sm font-bold text-slate-600 transition-colors hover:text-violet-600">Explore how it works <span aria-hidden="true">↘</span></a></div>
+          <div className="mt-12 flex flex-wrap gap-x-7 gap-y-3 border-t border-slate-200 pt-5 text-xs font-semibold text-slate-500"><span className="flex items-center gap-2"><Check size={14} className="text-violet-600" /> Built around your exam</span><span className="flex items-center gap-2"><Check size={14} className="text-violet-600" /> Saved in your browser</span></div>
+        </div>
+        <ProductPreview />
+      </section>
+
+      <section className="border-y border-slate-200 bg-white/70">
+        <div className="mx-auto grid max-w-7xl gap-0 px-5 sm:px-8 md:grid-cols-3 lg:px-12">
+          {[["01", "Structured preparation", "A clear path from the full syllabus to the next right task."], ["02", "Adaptive scheduling", "A plan that can make room when your week does not go to plan."], ["03", "Progress visibility", "A focused view of what is done, what is next, and what matters."]].map(([number, title, detail]) => <div key={number} className="flex gap-4 border-b border-slate-200 py-7 last:border-0 md:border-b-0 md:border-r md:px-8 md:first:pl-0 md:last:border-r-0"><span className="font-mono text-xs font-bold text-violet-600">{number}</span><div><h2 className="text-sm font-bold text-slate-950">{title}</h2><p className="mt-1.5 max-w-xs text-sm leading-6 text-slate-500">{detail}</p></div></div>)}
+        </div>
+      </section>
+
+      <section className="mx-auto grid max-w-7xl gap-12 px-5 py-24 sm:px-8 lg:grid-cols-[0.8fr_1.2fr] lg:px-12 lg:py-36">
+        <div><p className="eyebrow">The problem</p><h2 className="mt-4 max-w-md text-4xl font-black leading-[1.02] tracking-[-0.055em] sm:text-5xl">Studying is hard enough. Planning shouldn&apos;t be.</h2></div>
+        <div className="grid gap-8 sm:grid-cols-2">{[["01", "The syllabus is a wall of words.", "Important topics hide in a long list, making it hard to know where to begin."], ["02", "Every day starts with a decision.", "Without a priority, valuable energy disappears before the real work starts."], ["03", "One missed day becomes a spiral.", "A plan that cannot bend turns a difficult week into a lost one."], ["04", "Progress is difficult to feel.", "Scattered notes and half-finished sessions make momentum invisible."]].map(([number, title, detail]) => <div key={number} className="border-t border-slate-200 pt-5"><span className="font-mono text-xs font-bold text-violet-600">{number}</span><h3 className="mt-3 text-lg font-bold tracking-tight">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p></div>)}</div>
+      </section>
+
+      <section id="features" className="bg-slate-950 px-5 py-24 text-white sm:px-8 lg:px-12 lg:py-32">
+        <div className="mx-auto max-w-7xl"><div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-300">One system, five useful surfaces</p><h2 className="mt-4 text-4xl font-black leading-[1.03] tracking-[-0.055em] sm:text-5xl">Everything you need to move from intention to done.</h2></div><div className="mt-16 grid gap-px overflow-hidden border border-white/10 bg-white/10 md:grid-cols-2 lg:grid-cols-3">{([{ number: "01", title: "AI-powered roadmap", detail: "A structured plan generated from the topics you actually need to learn.", icon: <Sparkles size={18} /> }, { number: "02", title: "Daily task breakdown", detail: "Theory, exercises, and active practice, paced into a realistic study day.", icon: <Check size={18} /> }, { number: "03", title: "Progress tracking", detail: "A simple dashboard that makes completed work and next steps visible.", icon: <BarChart3 size={18} /> }, { number: "04", title: "Intelligent rebalancing", detail: "Preview how unfinished work can move across the days you have left.", icon: <RefreshCw size={18} /> }, { number: "05", title: "Exam-oriented preparation", detail: "A dated roadmap that keeps the target in view without adding noise.", icon: <Target size={18} /> }] as Array<{ number: string; title: string; detail: string; icon: ReactNode }>).map((feature) => <article key={feature.number} className="group min-h-56 bg-slate-950 p-7 transition-colors hover:bg-slate-900 sm:p-9"><div className="flex items-start justify-between"><span className="font-mono text-xs text-violet-300">{feature.number}</span><span className="text-violet-300 transition-transform duration-300 group-hover:translate-x-1">{feature.icon}</span></div><h3 className="mt-16 text-xl font-bold tracking-tight">{feature.title}</h3><p className="mt-2 max-w-xs text-sm leading-6 text-slate-400">{feature.detail}</p></article>)}</div></div>
+      </section>
+
+      <section id="how-it-works" className="mx-auto max-w-7xl px-5 py-24 sm:px-8 lg:px-12 lg:py-32"><div className="grid gap-12 lg:grid-cols-[0.7fr_1.3fr]"><div><p className="eyebrow">How it works</p><h2 className="mt-4 max-w-sm text-4xl font-black leading-[1.03] tracking-[-0.055em] sm:text-5xl">A better plan in three moves.</h2><p className="mt-5 max-w-sm text-sm leading-7 text-slate-500">No account maze. No blank calendar. Just the information needed to build a useful first version of your study plan.</p></div><div className="grid gap-0 sm:grid-cols-3">{[["01", "Add your syllabus", "Paste subjects, chapters, or a full outline."], ["02", "Set your constraints", "Choose the exam date and a daily availability you can sustain."], ["03", "Start with today", "Get a dated roadmap, then check off the next task."]].map(([number, title, detail]) => <div key={number} className="border-t border-slate-200 py-6 sm:border-l sm:border-t-0 sm:px-7 first:sm:border-l-0 first:sm:pl-0"><span className="font-mono text-xs font-bold text-violet-600">{number}</span><h3 className="mt-8 text-xl font-bold tracking-tight">{title}</h3><p className="mt-3 text-sm leading-6 text-slate-500">{detail}</p></div>)}</div></div></section>
+
+      <section id="planner" className="relative border-y border-slate-200 bg-[#eeedf7] px-5 py-20 sm:px-8 lg:px-12 lg:py-28">
+        <div className="pointer-events-none absolute right-0 top-0 size-80 rounded-full bg-violet-200/50 blur-3xl" />
+        <div className="relative mx-auto grid max-w-7xl items-start gap-12 lg:grid-cols-[0.72fr_1.28fr] lg:gap-24">
+          <div className="lg:sticky lg:top-28"><p className="eyebrow">Start here</p><h2 className="mt-4 max-w-md text-4xl font-black leading-[1.02] tracking-[-0.055em] sm:text-5xl">Make a plan you can actually keep.</h2><p className="mt-5 max-w-md text-sm leading-7 text-slate-600">Give StudyPilot the shape of your semester. It will turn that context into a focused, dated roadmap.</p><div className="mt-8 grid gap-3 text-sm font-semibold text-slate-700"><span className="flex items-center gap-3"><span className="flex size-7 items-center justify-center rounded-full bg-white text-violet-600 shadow-sm">1</span> Paste the topics you need to cover</span><span className="flex items-center gap-3"><span className="flex size-7 items-center justify-center rounded-full bg-white text-violet-600 shadow-sm">2</span> Choose the day you want to be ready</span><span className="flex items-center gap-3"><span className="flex size-7 items-center justify-center rounded-full bg-white text-violet-600 shadow-sm">3</span> Set a sustainable daily limit</span></div></div>
+          <section className="surface-card p-6 sm:p-9">
+            <div className="mb-8 flex items-start justify-between gap-5"><div><p className="text-2xl font-black tracking-tight text-slate-950">Build your study plan</p><p className="mt-2 text-sm leading-6 text-slate-500">A few details are all it takes to get started.</p></div><div className="hidden size-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 sm:flex"><Target size={18} /></div></div>
           <form onSubmit={(event) => { event.preventDefault(); if (canSubmit && !isLoading) onGenerate(); }}>
             <div className="mb-6">
               <div className="mb-2 flex items-center justify-between"><label className="field-label mb-0" htmlFor="syllabus">Syllabus or topics</label><span className="text-xs tabular-nums text-slate-400">{syllabusText.length} characters</span></div>
@@ -558,10 +714,22 @@ function SetupLanding({
             {isLoading && <div role="status" aria-live="polite" className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-xs font-semibold text-violet-700"><span className="size-1.5 animate-pulse rounded-full bg-violet-600" /> Organizing your topics around your available time...</div>}
             <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400"><Sparkles size={12} /> After generation, you&apos;ll get a dated checklist you can save locally and adjust when life changes.</p>
           </form>
-        </section>
-      </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="faq" className="mx-auto max-w-4xl px-5 py-24 sm:px-8 lg:py-32"><div className="text-center"><p className="eyebrow">FAQ</p><h2 className="mt-4 text-4xl font-black tracking-[-0.055em] sm:text-5xl">A few useful answers.</h2></div><div className="mt-12 divide-y divide-slate-200 border-y border-slate-200">{[["Do I need an account?", "No. Your roadmap and progress are saved locally in this browser. There is no sign-in flow in the current product."], ["What does StudyPilot use to build a plan?", "It uses your syllabus, exam date, and daily study hours to ask the AI provider for a structured roadmap, then validates the dates, task structure, IDs, and daily capacity before showing it."], ["What happens if I fall behind?", "The dashboard includes a rebalance preview that moves unfinished tasks across remaining days without changing your exam date, and lets you apply or undo the change."], ["Can I export my roadmap?", "Yes. Once your roadmap is generated, the dashboard supports calendar export and printing."]].map(([question, answer]) => <details key={question} className="group py-5"><summary className="flex cursor-pointer list-none items-center justify-between gap-5 text-left text-base font-bold tracking-tight marker:hidden">{question}<ChevronDown size={18} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" /></summary><p className="max-w-2xl pt-3 text-sm leading-7 text-slate-500">{answer}</p></details>)}</div></section>
+
+      <footer className="border-t border-slate-200 bg-white px-5 py-10 sm:px-8 lg:px-12"><div className="mx-auto flex max-w-7xl flex-col gap-8 sm:flex-row sm:items-end sm:justify-between"><div><Brand /><p className="mt-4 max-w-xs text-sm leading-6 text-slate-500">A calmer way to turn your syllabus into progress.</p></div><div className="flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-slate-500"><a href="#product" className="hover:text-slate-950">Product</a><a href="#features" className="hover:text-slate-950">Features</a><a href="#how-it-works" className="hover:text-slate-950">How it works</a><a href="#faq" className="hover:text-slate-950">FAQ</a></div><p className="text-xs text-slate-400">© 2026 StudyPilot AI</p></div></footer>
     </main>
   );
+}
+
+void SetupLanding;
+
+function ProductPreview() {
+  const previewTasks: Array<[string, string, boolean]> = [["Review cell structure", "Theory · 45 min", true], ["Complete genetics exercises", "Exercises · 35 min", true], ["Practice inheritance problems", "Practice · 25 min", false]];
+  return <div className="animate-fade-up animation-delay-200 relative mx-auto w-full max-w-[650px]"><div className="absolute -inset-4 rounded-[2rem] bg-violet-200/35 blur-2xl" /><div className="relative overflow-hidden rounded-[1.35rem] border border-slate-200 bg-white shadow-[0_30px_90px_rgb(30_27_75_/15%)]"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div className="flex items-center gap-2"><span className="flex size-7 items-center justify-center rounded-lg bg-slate-950 text-white"><GraduationCap size={14} /></span><span className="text-xs font-bold">StudyPilot <span className="text-violet-600">AI</span></span></div><div className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-rose-300" /><span className="size-2 rounded-full bg-amber-300" /><span className="size-2 rounded-full bg-emerald-300" /></div></div><div className="grid gap-0 bg-[#fbfbfa] sm:grid-cols-[150px_1fr]"><aside className="hidden border-r border-slate-100 bg-white p-4 sm:block"><p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Workspace</p><div className="mt-5 space-y-2"><div className="flex items-center gap-2 rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700"><LayoutDashboard size={12} /> Overview</div><div className="flex items-center gap-2 px-2.5 py-2 text-[10px] font-semibold text-slate-400"><Sparkles size={12} /> New strategy</div></div><div className="mt-24 rounded-xl bg-slate-950 p-3 text-white"><Target size={13} className="text-violet-300" /><p className="mt-2 text-[10px] font-bold">Small steps.</p><p className="mt-1 text-[9px] leading-4 text-slate-400">Big wins.</p></div></aside><div className="min-w-0 p-4 sm:p-6"><div className="flex items-end justify-between"><div><p className="text-[9px] font-bold uppercase tracking-[0.16em] text-violet-600">Your learning workspace</p><p className="mt-1 text-lg font-black tracking-tight text-slate-950">Keep the momentum.</p></div><span className="hidden text-[10px] font-semibold text-slate-400 sm:block">Exam target: Jun 18</span></div><div className="mt-5 grid grid-cols-3 gap-2"><div className="rounded-xl border border-slate-100 bg-white p-3"><p className="text-[9px] font-semibold text-slate-400">Countdown</p><p className="mt-1 text-sm font-black text-slate-950">18 days</p></div><div className="rounded-xl border border-slate-100 bg-white p-3"><p className="text-[9px] font-semibold text-slate-400">Completed</p><p className="mt-1 text-sm font-black text-emerald-600">12 / 36</p></div><div className="rounded-xl border border-slate-100 bg-white p-3"><p className="text-[9px] font-semibold text-slate-400">Today</p><p className="mt-1 text-sm font-black text-violet-600">1h 45m</p></div></div><div className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><div className="flex items-center justify-between text-[10px] font-bold"><span>Overall completion</span><span className="text-violet-600">34%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full w-[34%] rounded-full bg-violet-600" /></div></div><div className="mt-4 rounded-xl border border-violet-200 bg-white p-3 shadow-sm"><div className="flex items-center justify-between"><div><p className="text-xs font-bold text-slate-950">Today · Day 4</p><p className="mt-1 text-[9px] text-slate-400">3 of 3 tasks complete</p></div><span className="rounded-full bg-violet-50 px-2 py-1 text-[9px] font-bold text-violet-600">Focus</span></div><div className="mt-3 space-y-2">{previewTasks.map(([title, detail, done]) => <div key={title} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 ${done ? "border-emerald-100 bg-emerald-50/50" : "border-slate-100"}`}><span className={`flex size-4 items-center justify-center rounded border ${done ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{done && <Check size={10} strokeWidth={3} />}</span><span className="min-w-0 flex-1"><span className={`block truncate text-[10px] font-bold ${done ? "text-slate-400 line-through" : "text-slate-700"}`}>{title}</span><span className="block text-[8px] text-slate-400">{detail}</span></span></div>)}</div></div></div></div></div></div>;
 }
 
 function DashboardView({
@@ -606,13 +774,13 @@ function DashboardView({
 
   return (
     <div className="page-enter">
-      <nav className="print-hidden mb-8 flex items-center justify-between border-b pb-4">
+      <nav className="print-hidden mb-10 flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
         <div className="flex gap-5 text-sm font-semibold text-slate-500">
           <a href="#overview" className="text-violet-600">Dashboard</a>
-          <a href="#roadmap" className="transition-colors hover:text-violet-600">My Roadmap</a>
-          <a href="#progress" className="transition-colors hover:text-violet-600">Progress</a>
+          <a href="#roadmap" className="transition-colors hover:text-violet-600 focus:text-violet-600">My Roadmap</a>
+          <a href="#progress" className="transition-colors hover:text-violet-600 focus:text-violet-600">Progress</a>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <button onClick={() => window.print()} className="secondary-button"><Printer size={16} /> Export to PDF</button>
           <button onClick={() => downloadRoadmapCalendar(roadmap)} className="secondary-button"><Download size={16} /> Add to Calendar</button>
           <button onClick={onNewStrategy} className="secondary-button"><Sparkles size={16} /> New strategy</button>
@@ -627,10 +795,10 @@ function DashboardView({
         <StatCard icon={<TrendingUp size={18} />} label="Remaining" value={Math.max(stats.total - stats.completed, 0)} detail="topics to go" color="orange" />
         <StatCard icon={<Clock3 size={18} />} label="Today planned" value={formatMinutes(plannedMinutes)} detail={todayDay ? `${getDayTasks(todayDay).length} tasks today` : "No tasks today"} color="violet" />
       </div>
-      <div id="progress" className="print-hidden surface-card mt-5 p-5"><div className="mb-3 flex justify-between text-sm font-bold"><span>Overall completion</span><span className="text-violet-600">{stats.percentage}%</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="progress-fill h-full rounded-full bg-gradient-to-r from-violet-600 to-indigo-500 transition-all duration-500" style={{ width: `${stats.percentage}%` }} /></div></div>
+      <div id="progress" className="print-hidden surface-card mt-5 p-5"><div className="mb-3 flex justify-between text-sm font-bold"><span>Overall completion</span><span className="text-violet-600">{stats.percentage}%</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="progress-fill h-full rounded-full bg-violet-600 transition-all duration-500" style={{ width: `${stats.percentage}%` }} /></div></div>
       <div id="roadmap" className="printable-roadmap mt-10 grid gap-8 xl:grid-cols-[1fr_300px]">
         <section><div className="mb-4 flex items-center justify-between"><div><h3 className="text-xl font-bold tracking-tight">Daily checklist</h3><p className="mt-1 text-sm text-slate-500">{roadmap.length} planned study days</p></div><CalendarDays className="text-slate-400" size={20} aria-label="Calendar" /></div>{roadmap.length === 0 ? <EmptyRoadmap onNewStrategy={onNewStrategy} /> : <div className="space-y-3">{roadmap.map((day) => <DayAccordion key={day.day} day={day} expanded={expandedDays.includes(day.day)} isToday={day.date === today} onToggle={() => onToggleDay(day.day)} onTopicToggle={onToggleTopic} />)}</div>}</section>
-        <aside className="print-hidden space-y-4"><FocusTimer /><div className="overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-600 to-indigo-600 p-5 text-white shadow-xl shadow-violet-200"><div className="mb-7 flex items-start justify-between"><div><p className="text-sm font-semibold text-violet-100">Today&apos;s focus</p><p className="mt-1 text-2xl font-black">{todayDay ? `Day ${todayDay.day}` : activeDay ? `Day ${activeDay.day}` : "Ready"}</p></div><div className="rounded-xl bg-white/15 p-2.5"><Target size={20} /></div></div><p className="text-sm text-violet-100">{todayDay ? formatDate(todayDay.date) : "No schedule for today"}</p><div className="mt-4 flex items-center gap-2 text-sm font-semibold"><Clock3 size={15} /> {formatMinutes(plannedMinutes)} planned</div></div><div className="surface-card p-5"><div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><RefreshCw size={18} /></div><h3 className="font-bold">Fell behind?</h3><p className="mt-1 text-sm leading-6 text-slate-500">Preview unfinished topics across the remaining days without changing your exam date.</p><button onClick={onRebalance} disabled={Boolean(rebalancePreview) || roadmap.length === 0} className="secondary-button mt-4 w-full justify-center text-xs"><RefreshCw size={15} /> Preview a new schedule</button>{canUndoRebalance && <button onClick={onUndoRebalance} className="secondary-button mt-2 w-full justify-center text-xs"><RotateCcw size={15} /> Undo last rebalance</button>}{notice && <p role="status" className="mt-3 text-xs font-semibold text-emerald-600">{notice}</p>}{rebalancePreview && <RebalancePreview preview={rebalancePreview} onApply={onApplyRebalance} onCancel={onCancelRebalance} />}</div></aside>
+        <aside className="print-hidden space-y-4"><FocusTimer /><div className="overflow-hidden rounded-2xl border border-violet-200 bg-violet-600 p-5 text-white shadow-xl shadow-violet-200/40 dark:border-violet-500/30 dark:shadow-black/20"><div className="mb-7 flex items-start justify-between"><div><p className="text-sm font-semibold text-violet-100">Today&apos;s focus</p><p className="mt-1 text-2xl font-black">{todayDay ? `Day ${todayDay.day}` : activeDay ? `Day ${activeDay.day}` : "Ready"}</p></div><div className="rounded-xl bg-white/15 p-2.5"><Target size={20} /></div></div><p className="text-sm text-violet-100">{todayDay ? formatDate(todayDay.date) : "No schedule for today"}</p><div className="mt-4 flex items-center gap-2 text-sm font-semibold"><Clock3 size={15} /> {formatMinutes(plannedMinutes)} planned</div></div><div className="surface-card p-5"><div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><RefreshCw size={18} /></div><h3 className="font-bold">Fell behind?</h3><p className="mt-1 text-sm leading-6 text-slate-500">Preview unfinished topics across the remaining days without changing your exam date.</p><button onClick={onRebalance} disabled={Boolean(rebalancePreview) || roadmap.length === 0} className="secondary-button mt-4 w-full justify-center text-xs"><RefreshCw size={15} /> Preview a new schedule</button>{canUndoRebalance && <button onClick={onUndoRebalance} className="secondary-button mt-2 w-full justify-center text-xs"><RotateCcw size={15} /> Undo last rebalance</button>}{notice && <p role="status" className="mt-3 text-xs font-semibold text-emerald-600">{notice}</p>}{rebalancePreview && <RebalancePreview preview={rebalancePreview} onApply={onApplyRebalance} onCancel={onCancelRebalance} />}</div></aside>
       </div>
     </div>
   );
@@ -692,7 +860,7 @@ function AnalyticsSummary({
   stats: { total: number; completed: number; percentage: number; streak: number };
 }) {
   return (
-    <section className="mb-6 overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-slate-950 p-5 text-white shadow-xl shadow-violet-200/60 sm:p-7" aria-label="Study analytics summary">
+    <section className="mb-6 overflow-hidden rounded-2xl bg-slate-950 p-5 text-white shadow-xl shadow-slate-300/30 sm:p-7 dark:shadow-black/30" aria-label="Study analytics summary">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm font-bold text-violet-100">
@@ -714,7 +882,7 @@ function AnalyticsSummary({
           <span>{stats.percentage}%</span>
         </div>
         <div className="h-3 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-valuenow={stats.percentage} aria-valuemin={0} aria-valuemax={100} aria-label="Overall syllabus completion">
-          <div className="h-full rounded-full bg-gradient-to-r from-white to-violet-200 transition-all duration-500" style={{ width: `${stats.percentage}%` }} />
+          <div className="h-full rounded-full bg-violet-300 transition-all duration-500" style={{ width: `${stats.percentage}%` }} />
         </div>
       </div>
     </section>
