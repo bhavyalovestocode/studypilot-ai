@@ -145,7 +145,7 @@ function getDaysUntil(examDate: string) {
 }
 
 export default function Home() {
-  const [view, setView] = useState<"setup" | "dashboard">("setup");
+  const [view, setView] = useState<"landing" | "onboarding" | "dashboard">("landing");
   const [syllabusText, setSyllabusText] = useState("");
   const [examDate, setExamDate] = useState("");
   const [dailyHours, setDailyHours] = useState(3);
@@ -397,9 +397,9 @@ export default function Home() {
 
   const activeDay = roadmap[0];
 
-  if (view === "setup") {
+  if (view === "onboarding") {
     return (
-      <ReferenceLanding
+      <ChatOnboarding
         syllabusText={syllabusText}
         examDate={examDate}
         dailyHours={dailyHours}
@@ -410,6 +410,15 @@ export default function Home() {
         onDateChange={setExamDate}
         onHoursChange={setDailyHours}
         onGenerate={generateRoadmap}
+        onBack={() => setView("landing")}
+      />
+    );
+  }
+
+  if (view === "landing") {
+    return (
+      <ReferenceLanding
+        onStartPlanner={() => setView("onboarding")}
       />
     );
   }
@@ -420,10 +429,10 @@ export default function Home() {
         <Brand />
         <div className="mt-14 mb-3 px-3"><p className="eyebrow">Workspace</p></div>
         <nav className="space-y-2">
-          <button className="nav-item nav-item-active" onClick={() => setView(roadmap.length ? "dashboard" : "setup")}>
+          <button className="nav-item nav-item-active" onClick={() => setView(roadmap.length ? "dashboard" : "onboarding")}>
             <LayoutDashboard size={18} /> Overview
           </button>
-          <button className="nav-item" onClick={() => setView("setup")}>
+          <button className="nav-item" onClick={() => setView("onboarding")}>
             <Sparkles size={18} /> New strategy
           </button>
         </nav>
@@ -471,7 +480,7 @@ export default function Home() {
               onApplyRebalance={applyRebalance}
               onCancelRebalance={cancelRebalance}
               onUndoRebalance={undoRebalance}
-              onNewStrategy={() => setView("setup")}
+              onNewStrategy={() => setView("onboarding")}
             />
         </main>
       </div>
@@ -481,8 +490,8 @@ export default function Home() {
           <div className="h-full w-72 border-r border-slate-200 bg-[#f7f7f4] p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950" role="dialog" aria-modal="true" aria-labelledby="mobile-navigation-title" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between"><span id="mobile-navigation-title" className="sr-only">Mobile navigation</span><Brand /><button ref={mobileNavCloseRef} onClick={() => setMobileNavOpen(false)} aria-label="Close navigation menu"><X size={20} /></button></div>
             <nav className="mt-12 space-y-2">
-              <button className="nav-item nav-item-active" onClick={() => { setView(roadmap.length ? "dashboard" : "setup"); setMobileNavOpen(false); }}><LayoutDashboard size={18} /> Overview</button>
-              <button className="nav-item" onClick={() => { setView("setup"); setMobileNavOpen(false); }}><Sparkles size={18} /> New strategy</button>
+              <button className="nav-item nav-item-active" onClick={() => { setView(roadmap.length ? "dashboard" : "onboarding"); setMobileNavOpen(false); }}><LayoutDashboard size={18} /> Overview</button>
+              <button className="nav-item" onClick={() => { setView("onboarding"); setMobileNavOpen(false); }}><Sparkles size={18} /> New strategy</button>
             </nav>
           </div>
         </div>
@@ -505,6 +514,7 @@ function ChatOnboarding({
   onDateChange,
   onHoursChange,
   onGenerate,
+  onBack,
 }: {
   syllabusText: string;
   examDate: string;
@@ -516,6 +526,7 @@ function ChatOnboarding({
   onDateChange: (value: string) => void;
   onHoursChange: (value: number) => void;
   onGenerate: () => void;
+  onBack: () => void;
 }) {
   const [today, setToday] = useState("");
 
@@ -538,7 +549,7 @@ function ChatOnboarding({
     <main className="min-h-screen bg-canvas text-slate-950">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-[#f7f7f4]/90 backdrop-blur-xl">
         <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
-          <a href="#" aria-label="StudyPilot AI home"><Brand /></a>
+          <button type="button" className="chat-back-button" onClick={onBack} aria-label="Back to StudyPilot AI home">← <Brand /></button>
           <div className="flex items-center gap-3">
             <span className="hidden text-xs font-semibold text-slate-500 sm:inline">New study roadmap</span>
             <ThemeToggle />
@@ -616,43 +627,16 @@ function ChatOnboarding({
 }
 
 function ReferenceLanding({
-  syllabusText,
-  examDate,
-  dailyHours,
-  isLoading,
-  generationStage,
-  error,
-  onSyllabusChange,
-  onDateChange,
-  onHoursChange,
-  onGenerate,
+  onStartPlanner,
 }: {
-  syllabusText: string;
-  examDate: string;
-  dailyHours: number;
-  isLoading: boolean;
-  generationStage: GenerationStage;
-  error: string;
-  onSyllabusChange: (value: string) => void;
-  onDateChange: (value: string) => void;
-  onHoursChange: (value: number) => void;
-  onGenerate: () => void;
+  onStartPlanner: () => void;
 }) {
-  const [today, setToday] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const dateError = today.length > 0 && examDate.length > 0 && examDate < today;
-  const canSubmit = syllabusText.trim().length > 0 && Boolean(examDate) && !dateError;
   const headline = <>ACE YOUR EXAMS<br />WITH AI-POWERED<br />STUDY ROADMAPS</>;
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setToday(new Date().toISOString().slice(0, 10)), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  function scrollToPlanner() {
+  function startPlanner() {
     setMobileMenuOpen(false);
-    document.getElementById("planner")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => document.getElementById("syllabus")?.focus(), 450);
+    onStartPlanner();
   }
 
   return (
@@ -664,7 +648,7 @@ function ReferenceLanding({
           <a href="#features">FEATURES</a>
           <a href="#roadmap-preview">ROADMAP</a>
         </nav>
-        <button type="button" className="reference-header-cta" onClick={scrollToPlanner}>GET STARTED <span aria-hidden="true">↗</span></button>
+        <button type="button" className="reference-header-cta" onClick={startPlanner}>GET STARTED <span aria-hidden="true">↗</span></button>
         <button
           type="button"
           className="reference-menu-button"
@@ -680,7 +664,7 @@ function ReferenceLanding({
           <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>HOW IT WORKS</a>
           <a href="#features" onClick={() => setMobileMenuOpen(false)}>FEATURES</a>
           <a href="#roadmap-preview" onClick={() => setMobileMenuOpen(false)}>ROADMAP</a>
-          <button type="button" onClick={scrollToPlanner}>GET STARTED ↗</button>
+          <button type="button" onClick={startPlanner}>GET STARTED ↗</button>
         </nav>
       )}
 
@@ -697,7 +681,7 @@ function ReferenceLanding({
           <h1 className="reference-headline hero-reveal hero-reveal-2">{headline}</h1>
         </div>
         <p className="reference-hero-copy hero-reveal hero-reveal-3">Turn your syllabus, exam date, and available hours into a precise daily plan that keeps you moving from overwhelmed to exam-ready.</p>
-        <button type="button" className="reference-text-cta hero-reveal hero-reveal-4" onClick={scrollToPlanner}>BUILD MY ROADMAP <span aria-hidden="true">↗</span></button>
+        <button type="button" className="reference-text-cta hero-reveal hero-reveal-4" onClick={startPlanner}>BUILD MY ROADMAP <span aria-hidden="true">↗</span></button>
         <div className="hero-trust-strip hero-reveal hero-reveal-5" aria-label="StudyPilot product assurances">
           <span><b>01</b> NO ACCOUNT REQUIRED</span>
           <span><b>02</b> SAVED IN YOUR BROWSER</span>
@@ -805,31 +789,7 @@ function ReferenceLanding({
         <p className="reference-eyebrow">THE NEXT DAY IS YOURS</p>
         <h2>Your next exam starts<br />with a better plan.</h2>
         <p>Stop carrying the whole syllabus in your head. Give it a direction.</p>
-        <button type="button" onClick={scrollToPlanner}>CREATE MY STUDY ROADMAP <span aria-hidden="true">↗</span></button>
-      </section>
-
-      <section id="planner" className="reference-planner">
-        <div className="reference-planner-intro">
-          <p className="reference-eyebrow">START HERE</p>
-          <h2>BUILD A PLAN<br />THAT FITS.</h2>
-          <p>Give us the shape of your exam. We&apos;ll give you the next right move.</p>
-        </div>
-        <form
-          className="reference-form"
-          onSubmit={(event) => { event.preventDefault(); if (canSubmit && !isLoading) onGenerate(); }}
-        >
-          <label htmlFor="syllabus">YOUR SYLLABUS <span>{syllabusText.length} CHARACTERS</span></label>
-          <textarea id="syllabus" value={syllabusText} onChange={(event) => onSyllabusChange(event.target.value)} placeholder={"Biology: cell structure, genetics, ecology\nMathematics: calculus, probability, statistics"} />
-          <div className="reference-form-row">
-            <label htmlFor="exam-date">EXAM DATE<input id="exam-date" type="date" min={today} value={examDate} onChange={(event) => onDateChange(event.target.value)} aria-invalid={dateError} /></label>
-            <label htmlFor="hours">HOURS PER DAY <strong>{dailyHours}</strong><input id="hours" type="range" min="1" max="12" step="0.5" value={dailyHours} onChange={(event) => onHoursChange(Number(event.target.value))} /></label>
-          </div>
-          {dateError && <p className="reference-form-error" role="alert">Choose today or a future date.</p>}
-          {error && <p className="reference-form-error" role="alert">{error}</p>}
-          <button type="submit" disabled={!canSubmit || isLoading} className="reference-submit">
-            {isLoading ? `BUILDING — ${generationStage.toUpperCase()}` : "BUILD MY ROADMAP ↗"}
-          </button>
-        </form>
+        <button type="button" onClick={startPlanner}>CREATE MY STUDY ROADMAP <span aria-hidden="true">↗</span></button>
       </section>
 
       <footer className="reference-footer"><span>StudyPilot AI</span><span>MAKE THE NEXT DAY COUNT.</span><span>© 2026</span></footer>
