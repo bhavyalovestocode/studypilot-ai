@@ -383,7 +383,7 @@ export default function Home() {
 
   if (view === "setup") {
     return (
-      <ChatOnboarding
+      <SetupLanding
         syllabusText={syllabusText}
         examDate={examDate}
         dailyHours={dailyHours}
@@ -725,6 +725,7 @@ function SetupLanding({
   );
 }
 
+void ChatOnboarding;
 void SetupLanding;
 
 function ProductPreview() {

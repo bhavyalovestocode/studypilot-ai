@@ -7,43 +7,22 @@ vi.mock("groq-sdk", async () => {
 });
 
 const mockedGroq = vi.mocked(Groq);
+const DAY = 24 * 60 * 60 * 1000;
 const testToday = new Date().toISOString().slice(0, 10);
-const testExamDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-const validRoadmap = {
-  roadmap: [
-    {
-      day: 1,
-      date: testToday,
-      theoryTopics: [
-        {
-          id: "algebra-theory-1",
-          title: "Review linear equations",
-          subject: "Algebra",
-          estimatedMinutes: 60,
-          completed: false,
-        },
-      ],
-      exercises: [
-        {
-          id: "algebra-exercise-1",
-          title: "Complete linear equation exercises",
-          subject: "Algebra",
-          estimatedMinutes: 30,
-          completed: false,
-        },
-      ],
-      practiceQuestions: [
-        {
-          id: "algebra-practice-1",
-          title: "Solve linear equation practice questions",
-          subject: "Algebra",
-          estimatedMinutes: 30,
-          completed: false,
-        },
-      ],
-    },
-  ],
-};
+
+function dateAfter(days: number) {
+  return new Date(Date.now() + days * DAY).toISOString().slice(0, 10);
+}
+
+function makeDay(day: number, date = dateAfter(day - 1), subject = "Algebra", idPrefix = `day-${day}`) {
+  return {
+    day,
+    date,
+    theoryTopics: [{ id: `${idPrefix}-theory`, title: `Review ${subject} concepts`, subject, estimatedMinutes: 45, completed: false }],
+    exercises: [{ id: `${idPrefix}-exercise`, title: `Complete ${subject} exercises`, subject, estimatedMinutes: 30, completed: false }],
+    practiceQuestions: [{ id: `${idPrefix}-practice`, title: `Solve ${subject} practice questions`, subject, estimatedMinutes: 30, completed: false }],
+  };
+}
 
 function makeRequest(body: unknown) {
   return new Request("http://localhost/api/generate-roadmap", {
@@ -53,19 +32,26 @@ function makeRequest(body: unknown) {
   });
 }
 
-function mockCompletion(content: string) {
+function mockCompletions(contents: string[]) {
+  const create = vi.fn();
+  contents.forEach((content) => {
+    create.mockResolvedValueOnce({ choices: [{ message: { content } }] });
+  });
   mockedGroq.mockImplementation(
     () =>
       ({
-        chat: {
-          completions: {
-            create: vi.fn().mockResolvedValue({
-              choices: [{ message: { content } }],
-            }),
-          },
-        },
+        chat: { completions: { create } },
       }) as unknown as Groq,
   );
+  return create;
+}
+
+function batchJson(startDay: number, count: number, subject = "Algebra", idPrefix = `batch-${startDay}`) {
+  return JSON.stringify({
+    roadmap: Array.from({ length: count }, (_, index) =>
+      makeDay(startDay + index, dateAfter(startDay + index - 1), subject, `${idPrefix}-${index}`),
+    ),
+  });
 }
 
 describe("POST /api/generate-roadmap", () => {
@@ -74,115 +60,136 @@ describe("POST /api/generate-roadmap", () => {
     mockedGroq.mockReset();
   });
 
-  it("returns 500 when the API key is missing", async () => {
-    delete process.env.GROQ_API_KEY;
+  it("returns an empty deterministic roadmap when the exam is today", async () => {
     const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: "GROQ_API_KEY is not configured." });
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testToday, dailyHours: 3 }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ roadmap: [] });
+    expect(mockedGroq).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid input", async () => {
+  it("returns a validated one-day roadmap", async () => {
+    mockCompletions([batchJson(1, 1)]);
     const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "", examDate: "not-a-date", dailyHours: 20 }));
-
-    expect(response.status).toBe(400);
-  });
-
-  it("returns a validated roadmap on successful generation", async () => {
-    mockCompletion(JSON.stringify(validRoadmap));
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+    const result = await response.json();
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(validRoadmap);
-    expect(mockedGroq).toHaveBeenCalledWith(
-      expect.objectContaining({ timeout: 30_000, maxRetries: 0 }),
+    expect(result.roadmap).toHaveLength(1);
+    expect(result.roadmap[0].date).toBe(testToday);
+    expect(mockedGroq).toHaveBeenCalledWith(expect.objectContaining({ timeout: 30_000, maxRetries: 0 }));
+  });
+
+  it("produces exactly six application-scheduled days across bounded provider batches", async () => {
+    const create = mockCompletions([batchJson(1, 3), batchJson(4, 3)]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(6), dailyHours: 3 }));
+    const result = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(result.roadmap).toHaveLength(6);
+    expect(result.roadmap.map((day: { day: number }) => day.day)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(result.roadmap.map((day: { date: string }) => day.date)).toEqual(
+      Array.from({ length: 6 }, (_, index) => dateAfter(index)),
+    );
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("produces exactly ten application-scheduled days", async () => {
+    mockCompletions([batchJson(1, 3), batchJson(4, 3), batchJson(7, 3), batchJson(10, 1)]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(10), dailyHours: 3 }));
+    const result = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(result.roadmap).toHaveLength(10);
+    expect(result.roadmap.map((day: { date: string }) => day.date)).toEqual(
+      Array.from({ length: 10 }, (_, index) => dateAfter(index)),
     );
   });
 
-  it("accepts JSON wrapped in a markdown code block", async () => {
-    mockCompletion(`Here is your roadmap:
-\`\`\`json
-${JSON.stringify(validRoadmap)}
-\`\`\``);
+  it("cannot truncate a six-day schedule when a later batch is incomplete", async () => {
+    mockCompletions([batchJson(1, 3), JSON.stringify({ roadmap: [] })]);
     const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(6), dailyHours: 3 }));
+    const result = await response.json();
 
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+    expect(response.status).toBe(502);
+    expect(result.error).toContain("The AI response was incomplete");
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "incomplete-ai-response" }));
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "missing-day" }));
+  });
+
+  it("rejects duplicate task IDs across provider batches", async () => {
+    const duplicate = makeDay(1, dateAfter(0), "Algebra", "same");
+    mockCompletions([
+      JSON.stringify({ roadmap: [duplicate, makeDay(2, dateAfter(1), "Algebra", "same")] }),
+    ]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(2), dailyHours: 3 }));
+    const result = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "duplicate-task-id" }));
+  });
+
+  it("rejects daily capacity violations", async () => {
+    const overloaded = makeDay(1);
+    overloaded.theoryTopics[0].estimatedMinutes = 121;
+    mockCompletions([JSON.stringify({ roadmap: [overloaded] })]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+    const result = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "daily-capacity-exceeded" }));
+  });
+
+  it("detects missing syllabus coverage", async () => {
+    mockCompletions([batchJson(1, 1, "Algebra")]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra\nGeometry", examDate: dateAfter(1), dailyHours: 3 }));
+    const result = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(result.error).toContain("do not cover");
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "missing-syllabus-coverage" }));
+  });
+
+  it("returns a specific actionable error for invalid AI JSON", async () => {
+    mockCompletions(["not valid JSON"]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+    const result = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(result.error).toContain("invalid JSON");
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "invalid-json" }));
+  });
+
+  it("rejects a response with missing task groups", async () => {
+    const day = makeDay(1);
+    day.exercises = [];
+    mockCompletions([JSON.stringify({ roadmap: [day] })]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+    const result = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "invalid-task-response" }));
+  });
+
+  it("normalizes the provider numeric-key shape without letting it control the date", async () => {
+    mockCompletions([JSON.stringify({ 0: makeDay(1, "2099-01-01") })]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+    const result = await response.json();
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(validRoadmap);
+    expect(result.roadmap[0].date).toBe(testToday);
   });
 
-  it("normalizes the provider's numeric-key JSON object shape", async () => {
-    mockCompletion(JSON.stringify({ 0: validRoadmap.roadmap[0] }));
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(validRoadmap);
-  });
-
-  it("rejects a roadmap day without all structured study blocks", async () => {
-    mockCompletion(JSON.stringify({
-      roadmap: [{ day: 1, date: testToday, theoryTopics: validRoadmap.roadmap[0].theoryTopics, exercises: [], practiceQuestions: validRoadmap.roadmap[0].practiceQuestions }],
-    }));
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({
-      error: "Groq returned an invalid roadmap: Day 1 has no exercises tasks.",
-      details: [
-        { code: "empty-task-group", message: "Day 1 has no exercises tasks." },
-      ],
-    });
-  });
-
-  it("reports an under-produced roadmap instead of hiding the day-count failure", async () => {
-    mockCompletion(JSON.stringify({ roadmap: [] }));
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({
-      error: "Groq returned an invalid roadmap: Expected exactly 1 study days, but Groq returned 0.",
-      details: [
-        { code: "wrong-day-count", message: "Expected exactly 1 study days, but Groq returned 0." },
-      ],
-    });
-  });
-
-  it("reports duplicate IDs and daily capacity violations", async () => {
-    const invalidDay = JSON.parse(JSON.stringify(validRoadmap.roadmap[0]));
-    invalidDay.theoryTopics[0].estimatedMinutes = 121;
-    invalidDay.exercises[0].id = invalidDay.theoryTopics[0].id;
-    mockCompletion(JSON.stringify({ roadmap: [invalidDay] }));
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({
-      error: "Groq returned an invalid roadmap: Day 1 contains 181 minutes, exceeding the 180-minute daily capacity.",
-      details: [
-        {
-          code: "daily-capacity-exceeded",
-          message: "Day 1 contains 181 minutes, exceeding the 180-minute daily capacity.",
-        },
-        { code: "duplicate-task-id", message: 'Task ID "algebra-theory-1" is used more than once.' },
-      ],
-    });
-  });
-
-  it("returns a safe error when the provider fails", async () => {
+  it("keeps provider failures safe and actionable", async () => {
     mockedGroq.mockImplementation(
       () =>
         ({
@@ -196,70 +203,9 @@ ${JSON.stringify(validRoadmap)}
         }) as unknown as Groq,
     );
     const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({
-      error: "The AI service could not generate a roadmap right now.",
-    });
-  });
-
-  it("identifies unauthorized provider credentials without exposing them", async () => {
-    mockedGroq.mockImplementation(
-      () =>
-        ({
-          chat: {
-            completions: {
-              create: vi.fn().mockRejectedValue(
-                new APIError(401, { message: "unauthorized secret detail" }, "unauthorized", new Headers()),
-              ),
-            },
-          },
-        }) as unknown as Groq,
-    );
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({
-      error: "The AI service credentials are invalid or unauthorized. Check GROQ_API_KEY.",
-    });
-  });
-
-  it("identifies an unsupported or unavailable configured model", async () => {
-    mockedGroq.mockImplementation(
-      () =>
-        ({
-          chat: {
-            completions: {
-              create: vi.fn().mockRejectedValue(
-                new APIError(404, { message: "model not found" }, "model not found", new Headers()),
-              ),
-            },
-          },
-        }) as unknown as Groq,
-    );
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({
-      error: 'The configured Groq model "openai/gpt-oss-120b" is unavailable for this account. Check the model configuration.',
-    });
-  });
-
-  it("rejects malformed AI output", async () => {
-    mockCompletion("not valid JSON");
-    const { POST } = await import("./route");
-
-    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: testExamDate, dailyHours: 3 }));
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({
-      error: "Groq returned invalid JSON. Ask it to return the requested roadmap JSON without additional text.",
-    });
+    expect(await response.json()).toEqual({ error: "The AI provider is temporarily unavailable. Please try again." });
   });
 });

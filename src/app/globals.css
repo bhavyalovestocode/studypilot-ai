@@ -4,21 +4,23 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --color-canvas: #f7f7f4;
-  --color-ink: #101116;
+  --color-canvas: #f2f2f0;
+  --color-ink: #111111;
   --color-muted: #69707d;
-  --color-brand: #5b3df5;
-  --color-brand-soft: #8b5cf6;
-  --color-line: #e5e5e1;
+  --color-brand: #183b32;
+  --color-brand-soft: #a5b6a4;
+  --color-line: #d0d0cc;
 }
 
 :root {
-  --background: #f7f7f4;
-  --foreground: #101116;
+  --background: #f2f2f0;
+  --foreground: #111111;
   --surface: #ffffff;
-  --line: #e5e5e1;
-  --muted: #69707d;
-  --brand: #5b3df5;
+  --line: #d0d0cc;
+  --muted: #777777;
+  --brand: #183b32;
+  --lime: #c6f36b;
+  --sage: #a5b6a4;
 }
 
 .dark {
@@ -27,7 +29,9 @@
   --surface: #111827;
   --line: #263247;
   --muted: #94a3b8;
-  --brand: #8b7cff;
+  --brand: #a5b6a4;
+  --lime: #c6f36b;
+  --sage: #718574;
 }
 
 * {
@@ -38,6 +42,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  letter-spacing: -0.01em;
   transition: background-color 200ms ease, color 200ms ease;
 }
 
@@ -79,11 +84,11 @@ label:has(input:focus-visible) {
   }
 
   .landing-button-primary {
-    @apply bg-violet-600 text-white shadow-lg shadow-violet-200 hover:bg-violet-700 hover:shadow-xl hover:shadow-violet-200;
+    @apply bg-[#183b32] text-white shadow-lg shadow-[#183b32]/20 hover:bg-[#102c25] hover:shadow-xl hover:shadow-[#183b32]/25;
   }
 
   .landing-button-dark {
-    @apply bg-slate-950 text-white shadow-lg shadow-slate-300/30 hover:bg-violet-700;
+    @apply bg-[#183b32] text-white shadow-lg shadow-[#183b32]/20 hover:bg-[#102c25];
   }
 
   .nav-item {
@@ -107,7 +112,7 @@ label:has(input:focus-visible) {
   }
 
   .primary-button {
-    @apply inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 text-sm font-bold text-white shadow-lg shadow-violet-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-violet-700 hover:shadow-xl hover:shadow-violet-200 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#183b32] px-5 text-sm font-bold text-white shadow-lg shadow-[#183b32]/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#102c25] hover:shadow-xl hover:shadow-[#183b32]/25 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .secondary-button {
@@ -115,7 +120,7 @@ label:has(input:focus-visible) {
   }
 
   .surface-card {
-      @apply rounded-2xl border border-slate-200 bg-white shadow-[0_12px_35px_rgb(16_17_36_/4%)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20;
+      @apply rounded-xl border border-[#d0d0cc] bg-white shadow-[0_12px_35px_rgb(17_17_17_/5%)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20;
   }
 
   .eyebrow {
@@ -194,6 +199,48 @@ html {
 
 .dark .border-violet-100 {
   border-color: #3b356b;
+}
+
+/* Retheme existing utility compositions without changing their behavior. */
+.bg-violet-600 {
+  background-color: #183b32 !important;
+}
+
+.hover\:bg-violet-700:hover {
+  background-color: #102c25 !important;
+}
+
+.text-violet-600,
+.text-violet-700 {
+  color: #183b32 !important;
+}
+
+.bg-violet-50 {
+  background-color: #e7eee4 !important;
+}
+
+.bg-violet-100 {
+  background-color: #dce8d9 !important;
+}
+
+.text-violet-300 {
+  color: #c6f36b !important;
+}
+
+.bg-violet-200 {
+  background-color: #cbd9c8 !important;
+}
+
+.border-violet-200 {
+  border-color: #a5b6a4 !important;
+}
+
+.accent-violet-600 {
+  accent-color: #183b32;
+}
+
+.bg-canvas {
+  background-color: #f2f2f0;
 }
 
 @keyframes page-enter {

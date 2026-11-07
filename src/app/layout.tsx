@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StudyPilot AI | Study smarter",
-  description: "Your adaptive AI study strategy and roadmap.",
+  title: "StudyPilot AI | Turn your syllabus into a strategy",
+  description: "Transform your syllabus into a personalised, adaptive study roadmap.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
