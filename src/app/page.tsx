@@ -685,15 +685,41 @@ function ReferenceLanding({
       )}
 
       <section className="reference-hero">
-        <p className="reference-eyebrow">THE INTELLIGENT WAY TO PREPARE</p>
+        <div className="hero-orbit hero-orbit-one" aria-hidden="true" />
+        <div className="hero-orbit hero-orbit-two" aria-hidden="true" />
+        <div className="hero-cross hero-cross-one" aria-hidden="true">+</div>
+        <div className="hero-cross hero-cross-two" aria-hidden="true">+</div>
+        <p className="reference-eyebrow hero-reveal hero-reveal-1">AI ROADMAPS / BUILT FOR REAL STUDY WEEKS</p>
         <div className="echo-headline" aria-hidden="true">
           {[0, 1, 2, 3, 4, 5].map((layer) => (
             <h1 key={layer} className={`echo-layer echo-layer-${layer}`}>{headline}</h1>
           ))}
-          <h1 className="reference-headline">{headline}</h1>
+          <h1 className="reference-headline hero-reveal hero-reveal-2">{headline}</h1>
         </div>
-        <p className="reference-hero-copy">Turn your syllabus, exam date, and available hours into a precise daily plan that keeps you moving from overwhelmed to exam-ready.</p>
-        <button type="button" className="reference-text-cta" onClick={scrollToPlanner}>BUILD MY ROADMAP <span aria-hidden="true">↗</span></button>
+        <p className="reference-hero-copy hero-reveal hero-reveal-3">Turn your syllabus, exam date, and available hours into a precise daily plan that keeps you moving from overwhelmed to exam-ready.</p>
+        <button type="button" className="reference-text-cta hero-reveal hero-reveal-4" onClick={scrollToPlanner}>BUILD MY ROADMAP <span aria-hidden="true">↗</span></button>
+        <div className="hero-trust-strip hero-reveal hero-reveal-5" aria-label="StudyPilot product assurances">
+          <span><b>01</b> NO ACCOUNT REQUIRED</span>
+          <span><b>02</b> SAVED IN YOUR BROWSER</span>
+          <span><b>03</b> ADAPTS WHEN PLANS CHANGE</span>
+        </div>
+        <div className="hero-scroll-cue" aria-hidden="true"><span /> SCROLL TO EXPLORE</div>
+      </section>
+
+      <section className="reference-philosophy">
+        <p className="reference-eyebrow">THE STUDYPILOT PRINCIPLE</p>
+        <h2>A plan should <em>adapt</em> to you.<br />Not the other way around.</h2>
+        <div className="reference-principles">
+          {[
+            ["01", "PLAN INTELLIGENTLY", "Turn the whole syllabus into a sequence that respects your actual time."],
+            ["02", "TRACK CONSISTENTLY", "Make each completed task visible, so momentum has somewhere to build."],
+            ["03", "ADAPT CONTINUOUSLY", "When a day changes, reshape the plan instead of starting over."],
+          ].map(([number, title, detail]) => (
+            <article key={number} className="reference-principle reveal-on-scroll">
+              <span>{number}</span><div><h3>{title}</h3><p>{detail}</p></div>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section id="how-it-works" className="reference-section reference-steps">
@@ -707,7 +733,7 @@ function ReferenceLanding({
             ["02", "GET YOUR ROADMAP", "StudyPilot turns the full picture into a practical sequence of focused daily sessions."],
             ["03", "KEEP MAKING PROGRESS", "Check off tasks, see momentum, and reschedule unfinished work when life changes."],
           ].map(([number, title, detail]) => (
-            <article key={number} className="reference-step">
+            <article key={number} className="reference-step reveal-on-scroll">
               <span>{number}</span>
               <div><h3>{title}</h3><p>{detail}</p></div>
             </article>
@@ -726,8 +752,10 @@ function ReferenceLanding({
             ["SMALLER TASKS", "Big chapters become clear sessions you can start without overthinking."],
             ["VISIBLE MOMENTUM", "A simple checklist makes progress tangible, day after day."],
             ["ADAPTIVE RESCHEDULING", "Fall behind without falling apart. Rebalance the work around your reality."],
+            ["EXAM COUNTDOWN", "Keep the deadline in view without letting it become noise."],
+            ["DAILY STRUCTURE", "Know what to do next, how long it should take, and why it matters."],
           ].map(([title, detail], index) => (
-            <article key={title} className="reference-feature">
+            <article key={title} className="reference-feature reveal-on-scroll">
               <span>0{index + 1}</span><h3>{title}</h3><p>{detail}</p>
             </article>
           ))}
@@ -739,7 +767,7 @@ function ReferenceLanding({
           <p className="reference-eyebrow">THE WORKSPACE</p>
           <h2>YOUR NEXT<br />RIGHT TASK.</h2>
         </div>
-        <div className="reference-preview">
+        <div className="reference-preview reveal-on-scroll">
           <div className="reference-preview-top"><span>STUDYPILOT AI / OVERVIEW</span><span>EXAM IN 18 DAYS</span></div>
           <div className="reference-preview-body">
             <div><p className="reference-preview-label">TODAY / DAY 04</p><h3>Keep the momentum.</h3><p>Three focused tasks, already in order.</p></div>
@@ -750,6 +778,34 @@ function ReferenceLanding({
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="reference-comparison">
+        <div className="reference-section-heading">
+          <p className="reference-eyebrow">WHEN THE WEEK CHANGES</p>
+          <h2>STATIC PLANS<br />BREAK. THIS ONE<br />BENDS.</h2>
+        </div>
+        <div className="reference-comparison-grid">
+          <article>
+            <span className="comparison-label">A STATIC PLANNER</span>
+            <h3>The missed day stays missed.</h3>
+            <p>Yesterday&apos;s unfinished work remains locked to its original place, making the next day heavier.</p>
+            <div className="comparison-line comparison-line-muted"><i /><i /><i /><i /></div>
+          </article>
+          <article className="comparison-adaptive">
+            <span className="comparison-label">STUDYPILOT AI</span>
+            <h3>The plan makes room.</h3>
+            <p>Preview a revised schedule that protects completed work and redistributes what remains.</p>
+            <div className="comparison-line"><i /><i /><i /><i /></div>
+          </article>
+        </div>
+      </section>
+
+      <section className="reference-final-cta">
+        <p className="reference-eyebrow">THE NEXT DAY IS YOURS</p>
+        <h2>Your next exam starts<br />with a better plan.</h2>
+        <p>Stop carrying the whole syllabus in your head. Give it a direction.</p>
+        <button type="button" onClick={scrollToPlanner}>CREATE MY STUDY ROADMAP <span aria-hidden="true">↗</span></button>
       </section>
 
       <section id="planner" className="reference-planner">
