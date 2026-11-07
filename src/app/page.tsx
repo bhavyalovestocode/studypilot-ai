@@ -399,7 +399,7 @@ export default function Home() {
 
   if (view === "setup") {
     return (
-      <SetupLanding
+      <ReferenceLanding
         syllabusText={syllabusText}
         examDate={examDate}
         dailyHours={dailyHours}
@@ -611,6 +611,172 @@ function ChatOnboarding({
           </div>
         </section>
       </div>
+    </main>
+  );
+}
+
+function ReferenceLanding({
+  syllabusText,
+  examDate,
+  dailyHours,
+  isLoading,
+  generationStage,
+  error,
+  onSyllabusChange,
+  onDateChange,
+  onHoursChange,
+  onGenerate,
+}: {
+  syllabusText: string;
+  examDate: string;
+  dailyHours: number;
+  isLoading: boolean;
+  generationStage: GenerationStage;
+  error: string;
+  onSyllabusChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+  onHoursChange: (value: number) => void;
+  onGenerate: () => void;
+}) {
+  const [today, setToday] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const dateError = today.length > 0 && examDate.length > 0 && examDate < today;
+  const canSubmit = syllabusText.trim().length > 0 && Boolean(examDate) && !dateError;
+  const headline = <>ACE YOUR EXAMS<br />WITH AI-POWERED<br />STUDY ROADMAPS</>;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setToday(new Date().toISOString().slice(0, 10)), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function scrollToPlanner() {
+    setMobileMenuOpen(false);
+    document.getElementById("planner")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => document.getElementById("syllabus")?.focus(), 450);
+  }
+
+  return (
+    <main className="reference-landing min-h-screen overflow-hidden">
+      <header className="reference-header">
+        <a href="#" className="reference-wordmark" aria-label="StudyPilot AI home">StudyPilot AI</a>
+        <nav className="reference-nav" aria-label="Main navigation">
+          <a href="#how-it-works">HOW IT WORKS</a>
+          <a href="#features">FEATURES</a>
+          <a href="#roadmap-preview">ROADMAP</a>
+        </nav>
+        <button type="button" className="reference-header-cta" onClick={scrollToPlanner}>GET STARTED <span aria-hidden="true">↗</span></button>
+        <button
+          type="button"
+          className="reference-menu-button"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          aria-expanded={mobileMenuOpen}
+          aria-label="Toggle navigation"
+        >
+          <Menu size={18} />
+        </button>
+      </header>
+      {mobileMenuOpen && (
+        <nav className="reference-mobile-nav" aria-label="Mobile navigation">
+          <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>HOW IT WORKS</a>
+          <a href="#features" onClick={() => setMobileMenuOpen(false)}>FEATURES</a>
+          <a href="#roadmap-preview" onClick={() => setMobileMenuOpen(false)}>ROADMAP</a>
+          <button type="button" onClick={scrollToPlanner}>GET STARTED ↗</button>
+        </nav>
+      )}
+
+      <section className="reference-hero">
+        <p className="reference-eyebrow">THE INTELLIGENT WAY TO PREPARE</p>
+        <div className="echo-headline" aria-hidden="true">
+          {[0, 1, 2, 3, 4, 5].map((layer) => (
+            <h1 key={layer} className={`echo-layer echo-layer-${layer}`}>{headline}</h1>
+          ))}
+          <h1 className="reference-headline">{headline}</h1>
+        </div>
+        <p className="reference-hero-copy">Turn your syllabus, exam date, and available hours into a precise daily plan that keeps you moving from overwhelmed to exam-ready.</p>
+        <button type="button" className="reference-text-cta" onClick={scrollToPlanner}>BUILD MY ROADMAP <span aria-hidden="true">↗</span></button>
+      </section>
+
+      <section id="how-it-works" className="reference-section reference-steps">
+        <div className="reference-section-heading">
+          <p className="reference-eyebrow">A CLEARER WAY FORWARD</p>
+          <h2>FROM SYLLABUS<br />TO STUDY DAY.</h2>
+        </div>
+        <div className="reference-step-list">
+          {[
+            ["01", "SHARE YOUR SYLLABUS", "Add your subjects, topics, exam date, and the hours you can actually give each day."],
+            ["02", "GET YOUR ROADMAP", "StudyPilot turns the full picture into a practical sequence of focused daily sessions."],
+            ["03", "KEEP MAKING PROGRESS", "Check off tasks, see momentum, and reschedule unfinished work when life changes."],
+          ].map(([number, title, detail]) => (
+            <article key={number} className="reference-step">
+              <span>{number}</span>
+              <div><h3>{title}</h3><p>{detail}</p></div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="features" className="reference-section reference-features">
+        <div className="reference-section-heading">
+          <p className="reference-eyebrow">BUILT FOR REAL STUDY WEEKS</p>
+          <h2>LESS PLANNING.<br />MORE PROGRESS.</h2>
+        </div>
+        <div className="reference-feature-grid">
+          {[
+            ["PERSONALISED ROADMAPS", "Your exam date and your available hours shape every day."],
+            ["SMALLER TASKS", "Big chapters become clear sessions you can start without overthinking."],
+            ["VISIBLE MOMENTUM", "A simple checklist makes progress tangible, day after day."],
+            ["ADAPTIVE RESCHEDULING", "Fall behind without falling apart. Rebalance the work around your reality."],
+          ].map(([title, detail], index) => (
+            <article key={title} className="reference-feature">
+              <span>0{index + 1}</span><h3>{title}</h3><p>{detail}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="roadmap-preview" className="reference-section reference-preview-section">
+        <div className="reference-section-heading">
+          <p className="reference-eyebrow">THE WORKSPACE</p>
+          <h2>YOUR NEXT<br />RIGHT TASK.</h2>
+        </div>
+        <div className="reference-preview">
+          <div className="reference-preview-top"><span>STUDYPILOT AI / OVERVIEW</span><span>EXAM IN 18 DAYS</span></div>
+          <div className="reference-preview-body">
+            <div><p className="reference-preview-label">TODAY / DAY 04</p><h3>Keep the momentum.</h3><p>Three focused tasks, already in order.</p></div>
+            <div className="reference-preview-tasks">
+              {["Review cell structure", "Complete genetics exercises", "Practice inheritance problems"].map((task, index) => (
+                <div key={task} className="reference-preview-task"><span className={index < 2 ? "is-done" : ""}>{index < 2 ? "✓" : ""}</span><strong>{task}</strong><small>{index === 0 ? "THEORY · 45 MIN" : index === 1 ? "EXERCISES · 35 MIN" : "PRACTICE · 25 MIN"}</small></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="planner" className="reference-planner">
+        <div className="reference-planner-intro">
+          <p className="reference-eyebrow">START HERE</p>
+          <h2>BUILD A PLAN<br />THAT FITS.</h2>
+          <p>Give us the shape of your exam. We&apos;ll give you the next right move.</p>
+        </div>
+        <form
+          className="reference-form"
+          onSubmit={(event) => { event.preventDefault(); if (canSubmit && !isLoading) onGenerate(); }}
+        >
+          <label htmlFor="syllabus">YOUR SYLLABUS <span>{syllabusText.length} CHARACTERS</span></label>
+          <textarea id="syllabus" value={syllabusText} onChange={(event) => onSyllabusChange(event.target.value)} placeholder={"Biology: cell structure, genetics, ecology\nMathematics: calculus, probability, statistics"} />
+          <div className="reference-form-row">
+            <label htmlFor="exam-date">EXAM DATE<input id="exam-date" type="date" min={today} value={examDate} onChange={(event) => onDateChange(event.target.value)} aria-invalid={dateError} /></label>
+            <label htmlFor="hours">HOURS PER DAY <strong>{dailyHours}</strong><input id="hours" type="range" min="1" max="12" step="0.5" value={dailyHours} onChange={(event) => onHoursChange(Number(event.target.value))} /></label>
+          </div>
+          {dateError && <p className="reference-form-error" role="alert">Choose today or a future date.</p>}
+          {error && <p className="reference-form-error" role="alert">{error}</p>}
+          <button type="submit" disabled={!canSubmit || isLoading} className="reference-submit">
+            {isLoading ? `BUILDING — ${generationStage.toUpperCase()}` : "BUILD MY ROADMAP ↗"}
+          </button>
+        </form>
+      </section>
+
+      <footer className="reference-footer"><span>StudyPilot AI</span><span>MAKE THE NEXT DAY COUNT.</span><span>© 2026</span></footer>
     </main>
   );
 }
