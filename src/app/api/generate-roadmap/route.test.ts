@@ -157,7 +157,7 @@ describe("POST /api/generate-roadmap", () => {
   });
 
   it("returns a specific actionable error for invalid AI JSON", async () => {
-    mockCompletions(["not valid JSON"]);
+    mockCompletions(["not valid JSON", "not valid JSON", "not valid JSON"]);
     const { POST } = await import("./route");
     const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
     const result = await response.json();
@@ -170,7 +170,7 @@ describe("POST /api/generate-roadmap", () => {
   it("rejects a response with missing task groups", async () => {
     const day = makeDay(1);
     day.exercises = [];
-    mockCompletions([JSON.stringify({ roadmap: [day] })]);
+    mockCompletions([JSON.stringify({ roadmap: [day] }), JSON.stringify({ roadmap: [day] }), JSON.stringify({ roadmap: [day] })]);
     const { POST } = await import("./route");
     const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
     const result = await response.json();
@@ -179,14 +179,86 @@ describe("POST /api/generate-roadmap", () => {
     expect(result.details).toContainEqual(expect.objectContaining({ code: "invalid-task-response" }));
   });
 
-  it("normalizes the provider numeric-key shape without letting it control the date", async () => {
+  it("rejects a provider date that does not match the application-owned schedule", async () => {
     mockCompletions([JSON.stringify({ 0: makeDay(1, "2099-01-01") })]);
     const { POST } = await import("./route");
     const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
     const result = await response.json();
 
+    expect(response.status).toBe(502);
+    expect(result.details).toContainEqual(expect.objectContaining({ code: "date-mismatch" }));
+  });
+
+  it("retries a rate-limited batch without regenerating earlier batches", async () => {
+    const firstBatch = batchJson(1, 3);
+    const secondBatch = batchJson(4, 3);
+    const create = vi.fn()
+      .mockResolvedValueOnce({ choices: [{ message: { content: firstBatch } }] })
+      .mockRejectedValueOnce(new APIError(429, { message: "rate limited" }, "rate limited", new Headers({ "retry-after": "0" })))
+      .mockResolvedValueOnce({ choices: [{ message: { content: secondBatch } }] });
+    mockedGroq.mockImplementation(() => ({ chat: { completions: { create } } }) as unknown as Groq);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(6), dailyHours: 3 }));
+
     expect(response.status).toBe(200);
-    expect(result.roadmap[0].date).toBe(testToday);
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(create.mock.calls[1][0].messages[1].content).toContain('"day": 4');
+  });
+
+  it("retries a malformed batch and accepts the corrected response", async () => {
+    const create = vi.fn()
+      .mockResolvedValueOnce({ choices: [{ message: { content: '{"roadmap": [' } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: batchJson(1, 1) } }] });
+    mockedGroq.mockImplementation(() => ({ chat: { completions: { create } } }) as unknown as Groq);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+
+    expect(response.status).toBe(200);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries transient 5xx failures before accepting the batch", async () => {
+    const create = vi.fn()
+      .mockRejectedValueOnce(new APIError(503, { message: "overloaded" }, "overloaded", new Headers()))
+      .mockResolvedValueOnce({ choices: [{ message: { content: batchJson(1, 1) } }] });
+    mockedGroq.mockImplementation(() => ({ chat: { completions: { create } } }) as unknown as Groq);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+
+    expect(response.status).toBe(200);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries network failures and returns a safe error after exhaustion", async () => {
+    const create = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    mockedGroq.mockImplementation(() => ({ chat: { completions: { create } } }) as unknown as Groq);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "The AI provider is temporarily unavailable. Please try again." });
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects a batch that omits an assigned study date", async () => {
+    const first = JSON.stringify({ roadmap: [makeDay(1)] });
+    mockCompletions([first, first, first]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(2), dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect((await response.json()).details).toContainEqual(expect.objectContaining({ code: "incomplete-ai-response" }));
+  });
+
+  it("rejects invalid task durations", async () => {
+    const day = makeDay(1);
+    day.theoryTopics[0].estimatedMinutes = 4;
+    mockCompletions([JSON.stringify({ roadmap: [day] }), JSON.stringify({ roadmap: [day] }), JSON.stringify({ roadmap: [day] })]);
+    const { POST } = await import("./route");
+    const response = await POST(makeRequest({ syllabusText: "Algebra", examDate: dateAfter(1), dailyHours: 3 }));
+
+    expect(response.status).toBe(502);
+    expect((await response.json()).details).toContainEqual(expect.objectContaining({ code: "invalid-task-response" }));
   });
 
   it("keeps provider failures safe and actionable", async () => {

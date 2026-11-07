@@ -41,6 +41,7 @@ const EXAM_DATE_STORAGE_KEY = "studypilot-exam-date";
 const STREAK_STORAGE_KEY = "studypilot-streak";
 const SETUP_DRAFT_STORAGE_KEY = "studypilot-setup-draft";
 const STORAGE_VERSION = 2;
+type GenerationStage = "preparing" | "analysing" | "generating" | "validating" | "finalising";
 
 type StreakRecord = {
   completedDates: string[];
@@ -151,6 +152,7 @@ export default function Home() {
   const [roadmap, setRoadmap] = useState<RoadmapDay[]>([]);
   const [expandedDays, setExpandedDays] = useState<number[]>([1]);
   const [isLoading, setIsLoading] = useState(false);
+  const [generationStage, setGenerationStage] = useState<GenerationStage>("preparing");
   const [rebalancePreview, setRebalancePreview] = useState<ReturnType<typeof rebalanceRoadmap> | null>(null);
   const [previousRoadmap, setPreviousRoadmap] = useState<RoadmapDay[] | null>(null);
   const [error, setError] = useState("");
@@ -287,6 +289,13 @@ export default function Home() {
     setError("");
     setNotice("");
     setIsLoading(true);
+    setGenerationStage("preparing");
+    const stageTimers = [
+      window.setTimeout(() => setGenerationStage("analysing"), 700),
+      window.setTimeout(() => setGenerationStage("generating"), 2_000),
+      window.setTimeout(() => setGenerationStage("validating"), 5_000),
+      window.setTimeout(() => setGenerationStage("finalising"), 8_000),
+    ];
     try {
       const response = await fetch("/api/generate-roadmap", {
         method: "POST",
@@ -300,7 +309,13 @@ export default function Home() {
         throw new Error("The server returned an invalid response. Please try again.");
       }
       if (!response.ok || !data.roadmap) {
-        throw new Error(data.error || "Unable to generate your strategy.");
+        if (response.status === 429) throw new Error("The AI service is busy. Please try again shortly.");
+        if (response.status === 504) throw new Error("The AI service took too long to respond. Please try again.");
+        throw new Error(
+          response.status >= 500
+            ? "StudyPilot could not complete the roadmap safely. Please try again."
+            : data.error || "Unable to generate your strategy.",
+        );
       }
       const normalizedRoadmap = normalizeRoadmap(data.roadmap);
       setRoadmap(normalizedRoadmap);
@@ -323,6 +338,7 @@ export default function Home() {
             : "Something went wrong.",
       );
     } finally {
+      stageTimers.forEach((timer) => window.clearTimeout(timer));
       setIsLoading(false);
     }
   }
@@ -388,6 +404,7 @@ export default function Home() {
         examDate={examDate}
         dailyHours={dailyHours}
         isLoading={isLoading}
+        generationStage={generationStage}
         error={error}
         onSyllabusChange={setSyllabusText}
         onDateChange={setExamDate}
@@ -493,6 +510,7 @@ function ChatOnboarding({
   examDate: string;
   dailyHours: number;
   isLoading: boolean;
+  generationStage: GenerationStage;
   error: string;
   onSyllabusChange: (value: string) => void;
   onDateChange: (value: string) => void;
@@ -602,6 +620,7 @@ function SetupLanding({
   examDate,
   dailyHours,
   isLoading,
+  generationStage,
   error,
   onSyllabusChange,
   onDateChange,
@@ -612,6 +631,7 @@ function SetupLanding({
   examDate: string;
   dailyHours: number;
   isLoading: boolean;
+  generationStage: GenerationStage;
   error: string;
   onSyllabusChange: (value: string) => void;
   onDateChange: (value: string) => void;
@@ -710,8 +730,8 @@ function SetupLanding({
               <p id="hours-help" className="mt-2 text-xs text-slate-400">The roadmap will target up to {dailyHours * 60} minutes of work per study day, including theory, exercises, and practice.</p>
             </div>
             {error && <div role="alert" aria-live="assertive" className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"><p className="font-semibold">{error}</p><p className="mt-1 text-xs text-rose-600">Check your details and try again. Your entries are still saved.</p><button type="button" onClick={onGenerate} disabled={isLoading || !canSubmit} className="mt-2 text-xs font-bold text-rose-700 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50">Retry generation</button></div>}
-            <button type="submit" disabled={isLoading || !canSubmit} aria-busy={isLoading} className="primary-button w-full">{isLoading ? <><Loader2 className="animate-spin" size={18} /> Building your roadmap...</> : <>Generate Study Strategy <ArrowRight size={18} /> </>}</button>
-            {isLoading && <div role="status" aria-live="polite" className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-xs font-semibold text-violet-700"><span className="size-1.5 animate-pulse rounded-full bg-violet-600" /> Organizing your topics around your available time...</div>}
+            <button type="submit" disabled={isLoading || !canSubmit} aria-busy={isLoading} className="primary-button w-full">{isLoading ? <><Loader2 className="animate-spin" size={18} /> {generationStage === "preparing" ? "Preparing your schedule..." : generationStage === "analysing" ? "Analysing your syllabus..." : generationStage === "generating" ? "Generating study tasks..." : generationStage === "validating" ? "Validating your roadmap..." : "Finalising your roadmap..."}</> : <>Generate Study Strategy <ArrowRight size={18} /> </>}</button>
+            {isLoading && <div role="status" aria-live="polite" className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-xs font-semibold text-violet-700"><span className="size-1.5 animate-pulse rounded-full bg-violet-600" /> {generationStage === "preparing" ? "Preparing study schedule" : generationStage === "analysing" ? "Analysing syllabus" : generationStage === "generating" ? "Generating study tasks" : generationStage === "validating" ? "Validating every study day" : "Finalising your roadmap"}</div>}
             <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400"><Sparkles size={12} /> After generation, you&apos;ll get a dated checklist you can save locally and adjust when life changes.</p>
           </form>
           </section>

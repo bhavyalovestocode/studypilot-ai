@@ -11,7 +11,10 @@ const MAX_DAILY_HOURS = 12;
 const PROVIDER_TIMEOUT_MS = 30_000;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const ROADMAP_FAILURE_STATUS = 502;
-const DAYS_PER_PROVIDER_BATCH = 3;
+const MAX_DAYS_PER_PROVIDER_BATCH = 3;
+const MAX_BATCH_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 500;
+const RETRY_MAX_DELAY_MS = 4_000;
 
 interface RoadmapTask {
   id: string;
@@ -55,8 +58,9 @@ function isTask(value: unknown): value is RoadmapTask {
     typeof value.subject === "string" &&
     value.subject.trim().length > 0 &&
     typeof value.estimatedMinutes === "number" &&
+    Number.isInteger(value.estimatedMinutes) &&
     Number.isFinite(value.estimatedMinutes) &&
-    value.estimatedMinutes > 0 &&
+    value.estimatedMinutes >= 5 &&
     typeof value.completed === "boolean"
   );
 }
@@ -131,6 +135,7 @@ function parseProviderResponse(content: string): unknown {
 function describeBatchFailures(
   value: unknown,
   requestedDays: RoadmapDay[],
+  existingTaskIds: Set<string> = new Set(),
 ): RoadmapValidationFailure[] {
   if (!isRoadmapResponse(value)) {
     return [
@@ -152,16 +157,33 @@ function describeBatchFailures(
     });
   }
 
-  const requestedDayNumbers = new Set(requestedDays.map((day) => day.day));
   const returnedDayNumbers = new Set<number>();
+  const returnedDates = new Set<string>();
+  const taskIds = new Set(existingTaskIds);
   value.roadmap.forEach((day) => {
-    if (!requestedDayNumbers.has(day.day)) {
+    const requestedDay = requestedDays.find((candidate) => candidate.day === day.day);
+    if (!requestedDay) {
       failures.push({
         stage: "schedule",
         code: "unexpected-day",
         message: `The AI returned tasks for day ${day.day}, which was not in the supplied schedule batch.`,
       });
     }
+    if (requestedDay && day.date !== requestedDay.date) {
+      failures.push({
+        stage: "schedule",
+        code: "date-mismatch",
+        message: `The AI returned ${day.date} for day ${day.day}; the application assigned ${requestedDay.date}.`,
+      });
+    }
+    if (returnedDates.has(day.date)) {
+      failures.push({
+        stage: "schedule",
+        code: "duplicate-date",
+        message: `The AI returned study date ${day.date} more than once.`,
+      });
+    }
+    returnedDates.add(day.date);
     if (returnedDayNumbers.has(day.day)) {
       failures.push({
         stage: "schedule",
@@ -170,6 +192,16 @@ function describeBatchFailures(
       });
     }
     returnedDayNumbers.add(day.day);
+    taskGroups.forEach((group) => day[group].forEach((task) => {
+      if (taskIds.has(task.id)) {
+        failures.push({
+          stage: "structure",
+          code: "duplicate-task-id",
+          message: `Task ID "${task.id}" is used more than once.`,
+        });
+      }
+      taskIds.add(task.id);
+    }));
   });
 
   requestedDays.forEach((day) => {
@@ -180,9 +212,65 @@ function describeBatchFailures(
         message: `The AI returned no tasks for supplied day ${day.day}.`,
       });
     }
+
   });
 
   return failures;
+}
+
+function getBatchSize(syllabusText: string, totalDays: number) {
+  if (totalDays <= 1) return 1;
+  if (syllabusText.length > 4_000) return 1;
+  if (syllabusText.length > 2_000) return Math.min(2, totalDays);
+  return Math.min(MAX_DAYS_PER_PROVIDER_BATCH, totalDays);
+}
+
+function getErrorStatus(error: unknown) {
+  return isRecord(error) && typeof error.status === "number" ? error.status : undefined;
+}
+
+function getRetryAfterMs(error: unknown) {
+  if (!isRecord(error) || !isRecord(error.headers)) return undefined;
+  const retryAfter =
+    typeof error.headers.get === "function"
+      ? error.headers.get("retry-after")
+      : error.headers["retry-after"] ?? error.headers["Retry-After"];
+  if (typeof retryAfter !== "string") return undefined;
+  const seconds = Number(retryAfter);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds * 1_000, RETRY_MAX_DELAY_MS) : undefined;
+}
+
+function isRetryableProviderError(error: unknown) {
+  const status = getErrorStatus(error);
+  if (status === 429 || (status !== undefined && status >= 500)) return true;
+  if (error instanceof APIConnectionTimeoutError) return true;
+  return error instanceof TypeError || (error instanceof Error && /fetch|network|socket|timeout/i.test(error.message));
+}
+
+function retryDelay(error: unknown, attempt: number) {
+  const retryAfter = getRetryAfterMs(error);
+  if (retryAfter !== undefined) return retryAfter;
+  const exponential = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
+  return Math.round(exponential * (0.75 + Math.random() * 0.5));
+}
+
+function wait(milliseconds: number) {
+  if (process.env.NODE_ENV === "test") return Promise.resolve();
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isRetryableBatchFailure(failures: RoadmapValidationFailure[]) {
+  return failures.some(({ code }) =>
+    ["invalid-json", "empty-provider-response", "invalid-task-response", "incomplete-ai-response", "missing-day"].includes(code),
+  );
+}
+
+function batchFailureFallback(failures: RoadmapValidationFailure[]) {
+  if (failures.some(({ code }) => code === "invalid-json")) return "The AI returned invalid JSON.";
+  if (failures.some(({ code }) => ["empty-provider-response", "incomplete-ai-response", "missing-day"].includes(code))) {
+    return "The AI response was incomplete.";
+  }
+  return "The AI response was incomplete or invalid.";
 }
 
 function getSyllabusRequirements(syllabusText: string): string[] {
@@ -400,63 +488,91 @@ export async function POST(request: Request) {
   const mergedRoadmap: RoadmapDay[] = [];
 
   try {
-    for (let start = 0; start < schedule.length; start += DAYS_PER_PROVIDER_BATCH) {
-      const batch = schedule.slice(start, start + DAYS_PER_PROVIDER_BATCH);
+    const batchSize = getBatchSize(syllabusText.trim(), schedule.length);
+    for (let start = 0; start < schedule.length; start += batchSize) {
+      const batch = schedule.slice(start, start + batchSize);
       const prompts = buildBatchPrompts(batch, syllabusText.trim(), dailyHours, examDayString);
-      console.info("Requesting deterministic roadmap task batch from Groq.", {
-        model: MODEL,
-        batchStartDay: batch[0].day,
-        batchEndDay: batch[batch.length - 1].day,
-        totalDays: schedule.length,
-        dailyHours,
-        responseFormat: "json_object",
-      });
+      let generatedDays: RoadmapDay[] | null = null;
+      let lastFailures: RoadmapValidationFailure[] = [];
 
-      const completion = await groq.chat.completions.create({
-        model: MODEL,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: prompts.system },
-          { role: "user", content: prompts.user },
-        ],
-      });
-      const content = completion.choices[0]?.message?.content;
-      if (typeof content !== "string") {
-        const failures: RoadmapValidationFailure[] = [{
-          stage: "structure",
-          code: "empty-provider-response",
-          message: `The AI returned no tasks for days ${batch[0].day}-${batch[batch.length - 1].day}.`,
-        }];
-        logRoadmapFailure("response extraction", failures, { model: MODEL, batchSize: batch.length });
-        return getFailureResponse(failures, "The AI response was incomplete.");
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = parseProviderResponse(content);
-      } catch (error) {
-        const failures: RoadmapValidationFailure[] = [{
-          stage: "structure",
-          code: "invalid-json",
-          message: error instanceof Error ? error.message : "The AI response could not be parsed as JSON.",
-        }];
-        logRoadmapFailure("JSON parsing", failures, { model: MODEL, responseLength: content.length });
-        return getFailureResponse(failures, "The AI returned invalid JSON.");
-      }
-
-      const batchFailures = describeBatchFailures(parsed, batch);
-      if (batchFailures.length > 0) {
-        logRoadmapFailure("batch validation", batchFailures, {
+      for (let attempt = 1; attempt <= MAX_BATCH_ATTEMPTS; attempt += 1) {
+        console.info("Requesting deterministic roadmap task batch from Groq.", {
           model: MODEL,
           batchStartDay: batch[0].day,
           batchEndDay: batch[batch.length - 1].day,
+          totalDays: schedule.length,
+          dailyHours,
+          attempt,
+          maxAttempts: MAX_BATCH_ATTEMPTS,
+          responseFormat: "json_object",
         });
-        return getFailureResponse(batchFailures, "The AI response was incomplete or invalid.");
+
+        let completion;
+        try {
+          completion = await groq.chat.completions.create({
+            model: MODEL,
+            temperature: 0.2,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: prompts.system },
+              { role: "user", content: prompts.user },
+            ],
+          });
+        } catch (error) {
+          if (isRetryableProviderError(error) && attempt < MAX_BATCH_ATTEMPTS) {
+            await wait(retryDelay(error, attempt));
+            continue;
+          }
+          throw error;
+        }
+
+        const content = completion?.choices?.[0]?.message?.content;
+        if (typeof content !== "string" || content.trim().length === 0) {
+          if (lastFailures.length === 0) {
+            lastFailures = [{
+              stage: "structure",
+              code: "empty-provider-response",
+              message: `The AI returned no tasks for days ${batch[0].day}-${batch[batch.length - 1].day}.`,
+            }];
+          }
+        } else {
+          try {
+            const parsed = parseProviderResponse(content);
+            lastFailures = describeBatchFailures(
+              parsed,
+              batch,
+              new Set(mergedRoadmap.flatMap((day) => taskGroups.flatMap((group) => day[group].map((task) => task.id)))),
+            );
+            if (lastFailures.length === 0) {
+              generatedDays = (parsed as RoadmapResponse).roadmap;
+              break;
+            }
+          } catch (error) {
+            lastFailures = [{
+              stage: "structure",
+              code: "invalid-json",
+              message: error instanceof Error ? error.message : "The AI response could not be parsed as JSON.",
+            }];
+          }
+        }
+
+        logRoadmapFailure("batch validation", lastFailures, {
+          model: MODEL,
+          batchStartDay: batch[0].day,
+          batchEndDay: batch[batch.length - 1].day,
+          attempt,
+        });
+        if (!isRetryableBatchFailure(lastFailures) || attempt === MAX_BATCH_ATTEMPTS) {
+          return getFailureResponse(lastFailures, batchFailureFallback(lastFailures));
+        }
+        await wait(retryDelay(undefined, attempt));
       }
 
-      const providerDays = (parsed as RoadmapResponse).roadmap;
-      const providerDaysByNumber = new Map(providerDays.map((day) => [day.day, day]));
+      if (!generatedDays) {
+        return getFailureResponse(lastFailures, batchFailureFallback(lastFailures));
+      }
+
+      const providerDaysByNumber = new Map(generatedDays.map((day) => [day.day, day]));
       batch.forEach((scheduledDay) => {
         const generatedDay = providerDaysByNumber.get(scheduledDay.day);
         if (!generatedDay) return;
